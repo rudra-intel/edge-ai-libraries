@@ -31,6 +31,52 @@ SIMPLE_VIEW_VISIBLE_ELEMENTS = os.environ.get(
     "SIMPLE_VIEW_VISIBLE_ELEMENTS", "*src,urisourcebin,gva*,*sink"
 )
 
+# Configuration for Simple View: comma-separated regex patterns for invisible elements.
+# Elements matching these patterns will be excluded from Simple View even if they
+# match SIMPLE_VIEW_VISIBLE_ELEMENTS. This allows fine-grained control over which
+# elements are shown. Evaluation order: VISIBLE first, then INVISIBLE exclusions.
+SIMPLE_VIEW_INVISIBLE_ELEMENTS = os.environ.get(
+    "SIMPLE_VIEW_INVISIBLE_ELEMENTS",
+    "gvafpscounter,gvametapublish,gvametaconvert,gvawatermark",
+)
+
+
+def _compile_visibility_patterns(pattern_string: str) -> list[re.Pattern]:
+    """
+    Parse comma-separated wildcard patterns and compile them into regex patterns.
+
+    Args:
+        pattern_string: Comma-separated string of wildcard patterns (e.g., "*src,gva*")
+
+    Returns:
+        list[re.Pattern]: List of compiled regex patterns
+
+    Examples:
+        "*src" becomes regex "^.*src$"
+        "gva*" becomes regex "^gva.*$"
+    """
+    if not pattern_string or not pattern_string.strip():
+        return []
+
+    patterns = [
+        pattern.strip() for pattern in pattern_string.split(",") if pattern.strip()
+    ]
+    compiled_patterns = []
+
+    for pattern in patterns:
+        # Convert wildcard pattern to regex: * matches any sequence of characters
+        regex_pattern = "^" + pattern.replace("*", ".*") + "$"
+        compiled_patterns.append(re.compile(regex_pattern))
+
+    return compiled_patterns
+
+
+# Compile visibility patterns once at module initialization
+_COMPILED_VISIBLE_PATTERNS = _compile_visibility_patterns(SIMPLE_VIEW_VISIBLE_ELEMENTS)
+_COMPILED_INVISIBLE_PATTERNS = _compile_visibility_patterns(
+    SIMPLE_VIEW_INVISIBLE_ELEMENTS
+)
+
 
 # Internal reserved key used to mark special node kinds inside Node.data.
 # We cannot extend the public Node schema with a new top-level field, so we
@@ -514,15 +560,10 @@ class Graph:
         logger.debug("Generating simple view from advanced graph")
         logger.debug(f"Visible element patterns: {SIMPLE_VIEW_VISIBLE_ELEMENTS}")
 
-        # Parse the comma-separated patterns into a list
-        visible_patterns = [
-            pattern.strip() for pattern in SIMPLE_VIEW_VISIBLE_ELEMENTS.split(",")
-        ]
-
-        # Determine which nodes should be visible in simple view
+        # Use precompiled patterns for visibility check
         visible_node_ids = set()
         for node in self.nodes:
-            if _is_node_visible(node, visible_patterns):
+            if _is_node_visible(node, _COMPILED_VISIBLE_PATTERNS):
                 visible_node_ids.add(node.id)
                 logger.debug(f"Node {node.id} ({node.type}) is visible in simple view")
             else:
@@ -760,7 +801,7 @@ class Graph:
         return result_advanced
 
 
-def _is_node_visible(node: Node, visible_patterns: list[str]) -> bool:
+def _is_node_visible(node: Node, visible_patterns: list[re.Pattern]) -> bool:
     """
     Determine if a node should be visible in Simple View based on pattern matching.
 
@@ -769,7 +810,7 @@ def _is_node_visible(node: Node, visible_patterns: list[str]) -> bool:
 
     Args:
         node: The node to check for visibility
-        visible_patterns: List of wildcard patterns (e.g., "*src", "gva*") to match against node type
+        visible_patterns: List of compiled regex patterns to match against node type
 
     Returns:
         bool: True if node should be visible in simple view, False if it should be hidden
@@ -784,16 +825,24 @@ def _is_node_visible(node: Node, visible_patterns: list[str]) -> bool:
     if node.data.get(NODE_KIND_KEY) == NODE_KIND_CAPS:
         return False
 
-    # Check if node type matches any visible pattern
     node_type = node.type
-    for pattern in visible_patterns:
-        # Convert wildcard pattern to regex
-        # * matches any sequence of characters
-        regex_pattern = "^" + pattern.replace("*", ".*") + "$"
-        if re.match(regex_pattern, node_type):
-            return True
 
-    return False
+    # Step 1: Check if node type matches any visible pattern
+    matches_visible = False
+    for pattern in visible_patterns:
+        if pattern.match(node_type):
+            matches_visible = True
+            break
+
+    if not matches_visible:
+        return False
+
+    # Step 2: Check if node type matches any invisible pattern (exclusion)
+    for pattern in _COMPILED_INVISIBLE_PATTERNS:
+        if pattern.match(node_type):
+            return False
+
+    return True
 
 
 def _find_visible_targets(
