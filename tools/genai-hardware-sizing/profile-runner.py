@@ -26,7 +26,7 @@ def main():
     
     # Add arguments
     parser.add_argument("--users", default=1, type=int, 
-                        help="Number of concurrent users to simulate (default: 1)")
+                        help="Under implementation, this is set to 1 as the tool focuses on single user performance profiling")
     parser.add_argument("--request_count", default=1, type=int, 
                         help="Total number of requests to execute (default: 1)")
     parser.add_argument("--spawn_rate", default=1, type=int, 
@@ -52,11 +52,11 @@ def main():
 
     # Run the appropriate application profiling
     if args.app == "chatqna":        
-        chatqna_performance.chatqna_modular_performance(args.users, args.request_count, args.spawn_rate, args.host_ip, args.input, collect_resource_metrics)
+        chatqna_performance.chatqna_modular_performance(users=1, request_count=args.request_count, spawn_rate=args.spawn_rate, host_ip=args.host_ip, input_file=args.input, collect_resource_metrics=collect_resource_metrics)
     elif args.app == "chatqna_core":
-        chatqna_core_performance.chatqna_core_performance(args.users, args.request_count, args.spawn_rate, args.host_ip, args.input, collect_resource_metrics)
+        chatqna_core_performance.chatqna_core_performance(users=1, request_count=args.request_count, spawn_rate=args.spawn_rate, host_ip=args.host_ip, input_file=args.input, collect_resource_metrics=collect_resource_metrics)
     elif args.app == "video_summary_search":
-        vss_performance.vss_performance(args.users, args.request_count, args.host_ip, args.input, collect_resource_metrics, args.warmup_time)
+        vss_performance.vss_performance(users=1, request_count=args.request_count, host_ip=args.host_ip, input_file=args.input, collect_resource_metrics=collect_resource_metrics, warmup_time=args.warmup_time)
     else:
         print("Invalid application name. Please choose from chatqna, chatqna_core, video_summary.")
 
