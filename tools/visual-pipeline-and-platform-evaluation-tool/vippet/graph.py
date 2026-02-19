@@ -5,6 +5,7 @@ import re
 from collections import defaultdict
 from collections.abc import Iterator
 from dataclasses import asdict, dataclass
+from enum import Enum
 from pathlib import Path
 
 from models import SupportedModelsManager
@@ -19,6 +20,8 @@ from videos import OUTPUT_VIDEO_DIR, VideosManager
 
 # Internal constant used as a placeholder type for the main output sink in the graph.
 OUTPUT_PLACEHOLDER: str = "{OUTPUT_PLACEHOLDER}"
+RTSP_URL_PREFIX = "rtsp://"
+USB_DEVICE_PREFIX = "/dev/video"
 
 logger = logging.getLogger(__name__)
 labels_manager = get_labels_manager()
@@ -29,7 +32,7 @@ model_proc_manager = get_public_model_proc_manager()
 # All elements matching these patterns will be shown in Simple View.
 # All other elements (including caps nodes) will be hidden and their edges reconnected.
 SIMPLE_VIEW_VISIBLE_ELEMENTS = os.environ.get(
-    "SIMPLE_VIEW_VISIBLE_ELEMENTS", "*src,urisourcebin,gva*,*sink"
+    "SIMPLE_VIEW_VISIBLE_ELEMENTS", "*src,urisourcebin,gva*,*sink,source"
 )
 
 # Configuration for Simple View: comma-separated regex patterns for invisible elements.
@@ -84,6 +87,13 @@ _COMPILED_INVISIBLE_PATTERNS = _compile_visibility_patterns(
 # in a special way.
 NODE_KIND_KEY = "__node_kind"
 NODE_KIND_CAPS = "caps"
+
+
+class InputKind(str, Enum):
+    """Enum for input source types."""
+
+    FILE = "file"
+    CAMERA = "camera"
 
 
 @dataclass
@@ -352,6 +362,7 @@ class Graph:
         # Work on a deep copy of nodes to avoid mutating the original graph.
         nodes = copy.deepcopy(self.nodes)
         _validate_models_supported_on_devices(nodes)
+        _validate_camera_source_followed_by_decodebin3(nodes, self.edges)
         _model_display_name_to_path(nodes)
         _input_video_name_to_path(nodes)
         _labels_name_to_path(nodes)
@@ -402,12 +413,14 @@ class Graph:
         Changes applied:
         - Replace filesrc with multifilesrc loop=true
         - Change input file extension to .ts in location (ensures TS file exists)
-        - Replace qtdemux with tsdemux
+        - Replace demuxers (qtdemux, matroskademux, avidemux, flvdemux) with tsdemux
+        - Replace splitmuxsink with fakesink (looping mode doesn't produce output files)
 
         Returns:
             Modified Graph object with looping support
 
         Raises:
+            ValueError: If live sources (v4l2src, rtspsrc) are detected in the pipeline
             ValueError: If TS file cannot be created for any video source
 
         Note:
@@ -418,6 +431,12 @@ class Graph:
         modified_graph = copy.deepcopy(self)
 
         for node in modified_graph.nodes:
+            if node.type in {"v4l2src", "rtspsrc"}:
+                raise ValueError(
+                    f"Looping playback is not supported for live sources like {node.type}. "
+                    f"Please disable looping, remove, or replace the {node.type} element in your pipeline."
+                )
+
             # Replace filesrc with multifilesrc loop=true
             if node.type == "filesrc":
                 node.type = "multifilesrc"
@@ -606,28 +625,33 @@ class Graph:
 
         return self, output_paths
 
-    def get_input_video_filenames(self) -> list[str]:
+    def get_input_sources(self) -> list[str]:
         """
-        Retrieve a list of input video filenames from source nodes in the graph.
+        Retrieve a list of input sources from source nodes in the graph.
+
+        Supports multiple source types:
+        - Video files (filesrc): file paths or filenames
+        - RTSP cameras (rtspsrc): rtsp:// URLs
+        - USB cameras (v4l2src): /dev/videoX device paths
 
         Returns:
-            list[str]: List of input video filenames
+            list[str]: List of input sources (file paths, RTSP URLs, or device paths)
 
         This intentionally skips sink nodes to avoid collecting output paths.
         """
-        input_filenames: list[str] = []
+        input_sources: list[str] = []
 
         for node in self.nodes:
             if node.type.endswith("sink"):
-                # Skip sinks to avoid overwriting output paths
+                # Skip sinks to avoid collecting output paths
                 continue
-            for key in ("source", "location"):
-                filename = node.data.get(key)
-                if filename is None:
+            for key in ("source", "location", "device"):
+                source = node.data.get(key)
+                if source is None:
                     continue
-                input_filenames.append(filename)
+                input_sources.append(source)
 
-        return input_filenames
+        return input_sources
 
     def unify_all_element_names(
         self, pipeline_index: int, stream_index: int
@@ -724,18 +748,22 @@ class Graph:
 
         This function creates a new graph that shows only "meaningful" elements (sources,
         inference, outputs) while hiding technical plumbing elements (queues, converters, etc.).
+        Additionally, specific source elements (filesrc, v4l2src, rtspsrc) are converted to
+        a generic "source" type for better UI presentation.
 
         Algorithm:
           1. Identify which nodes should be visible based on SIMPLE_VIEW_VISIBLE_ELEMENTS patterns
           2. Build a mapping of edges to traverse through hidden nodes
-          3. Create new graph with only visible nodes
-          4. Reconnect edges: if A→hidden→hidden→B, create direct edge A→B
-          5. Handle tee branches: preserve branching structure even when tee itself is hidden
+          3. Create new graph with only visible nodes (deep copied)
+          4. Convert source elements (*src) to generic "source" nodes with kind/source attributes
+          5. Reconnect edges: if A→hidden→hidden→B, create direct edge A→B
+          6. Handle tee branches: preserve branching structure even when tee itself is hidden
 
         Important invariants:
           * Visible node IDs are preserved from the original graph
           * Edge IDs are regenerated sequentially in the new graph
           * Caps nodes (marked with __node_kind="caps") are always hidden
+          * Source elements are converted to generic "source" type with standardized attributes
           * If all nodes in a path are hidden, the edge is dropped
           * Tee branch structure is maintained when tee has visible downstream nodes
         """
@@ -758,8 +786,14 @@ class Graph:
 
         # Create new graph with only visible nodes (preserving their IDs)
         # Sort nodes by their numeric IDs to ensure consistent ordering
-        simple_nodes = [node for node in self.nodes if node.id in visible_node_ids]
+        simple_nodes = [
+            copy.deepcopy(node) for node in self.nodes if node.id in visible_node_ids
+        ]
         simple_nodes.sort(key=lambda node: int(node.id))
+
+        # Convert specific source elements (*src) to generic "source" type
+        # This simplifies the UI by showing a unified source node
+        _prepare_generic_input(simple_nodes)
 
         # Generate new edges by traversing through hidden nodes
         # Process visible nodes in sorted order by their numeric IDs to ensure consistent edge ordering
@@ -819,9 +853,11 @@ class Graph:
           3. Detect changes in edges between original_simple and modified_simple
           4. If any edge changes detected, raise ValueError (edge changes not supported)
           5. For modified node properties, update corresponding nodes in original_advanced
-          6. Return new advanced graph with updated properties
+          6. Handle generic "source" nodes by converting them to specific GStreamer elements
+          7. Return new advanced graph with updated properties
 
-        Note: Only property modifications of existing visible nodes are supported.
+        Note: Property modifications of existing visible nodes are supported.
+
         All structural changes (adding/removing nodes or edges) are rejected.
         We check node structure first because removing nodes also removes their edges,
         and we want to report the root cause (node removal) rather than the symptom (edge removal).
@@ -974,6 +1010,63 @@ class Graph:
             logger.debug(
                 f"Applied property changes to advanced node {node_id}: {advanced_node.data}"
             )
+
+        # Step 5: Handle generic "source" node mapping to GStreamer elements
+        for node_id in modified_node_ids:
+            modified_node = modified_nodes_by_id[node_id]
+
+            if modified_node.type == "source":
+                # Generic source node detected - map to appropriate GStreamer element
+                kind = modified_node.data.get("kind", "")
+                source = modified_node.data.get("source", "")
+
+                if not kind or not source:
+                    raise ValueError(
+                        f"Node {node_id} of type 'source' must have both 'kind' and 'source' attributes. "
+                        f"Found: kind='{kind}', source='{source}'"
+                    )
+
+                # Determine the target GStreamer element type and properties
+                if kind == InputKind.FILE:
+                    target_type = "filesrc"
+                    target_properties = {"location": source}
+                    logger.debug(
+                        f"Mapping source node {node_id} to filesrc with location={source}"
+                    )
+
+                elif kind == InputKind.CAMERA:
+                    if source.startswith(RTSP_URL_PREFIX):
+                        target_type = "rtspsrc"
+                        target_properties = {"location": source}
+                        logger.debug(
+                            f"Mapping source node {node_id} to rtspsrc with location={source}"
+                        )
+                    elif source.startswith(USB_DEVICE_PREFIX):
+                        target_type = "v4l2src"
+                        target_properties = {"device": source}
+                        logger.debug(
+                            f"Mapping source node {node_id} to v4l2src with device={source}"
+                        )
+                    else:
+                        raise ValueError(
+                            f"Unsupported camera source '{source}' for node {node_id}. "
+                            f"Camera sources must start with '{RTSP_URL_PREFIX}' for network cameras or '{USB_DEVICE_PREFIX}' for USB cameras."
+                        )
+                else:
+                    raise ValueError(
+                        f"Unsupported source kind '{kind}' for node {node_id}. "
+                        f"Supported kinds: '{InputKind.FILE.value}', '{InputKind.CAMERA.value}'"
+                    )
+
+                # Update the node in advanced view (overwriting any properties copied earlier)
+                if node_id in advanced_nodes_by_id:
+                    advanced_node = advanced_nodes_by_id[node_id]
+                    advanced_node.type = target_type
+                    advanced_node.data.clear()
+                    advanced_node.data.update(target_properties)
+                    logger.debug(
+                        f"Transformed source node {node_id} to {target_type} with properties {target_properties}"
+                    )
 
         logger.debug(
             f"Successfully applied changes from simple view to advanced view. "
@@ -1730,10 +1823,11 @@ def _validate_models_supported_on_devices(nodes: list[Node]) -> None:
 
 def _input_video_path_to_display_name(nodes: list[Node]) -> None:
     """
-    Convert absolute video paths into filenames for all non-sink nodes.
+    Convert absolute video paths into filenames for file-based source nodes.
 
     This ensures that stored graphs are independent of the specific
     filesystem layout and instead reference logical video names only.
+    Only processes nodes that actually read from video files (filesrc, multifilesrc, urisourcebin).
 
     Args:
         nodes: List of nodes to process (modified in place)
@@ -1742,19 +1836,21 @@ def _input_video_path_to_display_name(nodes: list[Node]) -> None:
         None
 
     Side effects:
-        - Modifies node.data["source"] or node.data["location"] for non-sink nodes
+        - Modifies node.data["location"] or node.data["source"] for file source nodes
         - Converts absolute paths to filenames only
         - Sets empty string if video path is not found
-        - Skips sink nodes to preserve output paths
+        - Only processes filesrc, multifilesrc, and urisourcebin node types
         - Logs debug messages for each conversion
 
     Example:
-        Input:  node.data["location"] = "/videos/input/sample.mp4"
-        Output: node.data["location"] = "sample.mp4"
+        Input:  node.type="filesrc", node.data["location"] = "/videos/input/sample.mp4"
+        Output: node.type="filesrc", node.data["location"] = "sample.mp4"
     """
+    # Only process node types that read from video files
+    file_source_types = {"filesrc", "multifilesrc", "urisourcebin"}
+
     for node in nodes:
-        if node.type.endswith("sink"):
-            # Skip sinks to avoid overwriting output paths
+        if node.type not in file_source_types:
             continue
         for key in ("source", "location"):
             path = node.data.get(key)
@@ -1771,11 +1867,10 @@ def _input_video_path_to_display_name(nodes: list[Node]) -> None:
 
 def _input_video_name_to_path(nodes: list[Node]) -> None:
     """
-    Convert logical video filenames back into absolute paths for non-sink nodes.
+    Convert logical video filenames back into absolute paths for file-based source nodes.
 
     This is performed when creating a runnable pipeline description from a
-    stored graph. Sink nodes are intentionally skipped so that their output
-    locations can be overridden by the caller if needed.
+    stored graph. Only processes nodes that actually read from video files.
 
     Args:
         nodes: List of nodes to process (modified in place)
@@ -1787,18 +1882,20 @@ def _input_video_name_to_path(nodes: list[Node]) -> None:
         ValueError: If video filename cannot be mapped to a valid path
 
     Side effects:
-        - Modifies node.data["source"] or node.data["location"] for non-sink nodes
+        - Modifies node.data["location"] or node.data["source"] for file source nodes
         - Converts filenames to absolute paths
-        - Skips sink nodes to preserve output paths
+        - Only processes filesrc, multifilesrc, and urisourcebin node types
         - Logs debug messages for each conversion
 
     Example:
-        Input:  node.data["location"] = "sample.mp4"
-        Output: node.data["location"] = "/videos/input/sample.mp4"
+        Input:  node.type="filesrc", node.data["location"] = "sample.mp4"
+        Output: node.type="filesrc", node.data["location"] = "/videos/input/sample.mp4"
     """
+    # Only process node types that read from video files
+    file_source_types = {"filesrc", "multifilesrc", "urisourcebin"}
+
     for node in nodes:
-        if node.type.endswith("sink"):
-            # Skip sinks to avoid overwriting output paths
+        if node.type not in file_source_types:
             continue
         for key in ("source", "location"):
             name = node.data.get(key)
@@ -1813,6 +1910,123 @@ def _input_video_name_to_path(nodes: list[Node]) -> None:
 
             node.data[key] = path
             logger.debug(f"Converted video filename to path: {name} -> {path}")
+
+
+def _prepare_generic_input(nodes: list[Node]) -> None:
+    """
+    Replace source elements with a generic 'source' element.
+
+    This function finds source elements (filesrc, multifilesrc, v4l2src, rtspsrc)
+    and replaces them with a generic "source" type, preserving source information
+    in standardized data attributes.
+
+    This is called during pipeline parsing (from_pipeline_description) to store
+    a UI-friendly representation.
+
+    Args:
+        nodes: List of nodes to process (modified in place)
+
+    Returns:
+        None
+
+    Side effects:
+        - Modifies node.type and node.data for source elements
+        - Converts filesrc/multifilesrc to source with kind=InputKind.FILE
+        - Converts v4l2src/rtspsrc to source with kind=InputKind.CAMERA
+        - Adds "source" attribute with original location/device identifier
+
+    The function adds two data attributes:
+        - "kind": Type of source (InputKind.FILE | InputKind.CAMERA)
+        - "source": Filename or camera identifier (video.mp4, /dev/video0, or rtsp://...)
+
+    Example:
+        Input:  node.type = "filesrc", node.data["location"] = "video.mp4"
+        Output: node.type = "source", node.data = {"kind": InputKind.FILE, "source": "video.mp4"}
+    """
+    for node in nodes:
+        # Check for file sources
+        if node.type in {"filesrc", "multifilesrc"}:
+            source_name = node.data.get("location", "")
+            node.data.clear()
+            node.type = "source"
+            node.data["kind"] = InputKind.FILE
+            node.data["source"] = source_name
+            logger.debug(f"Converted file source to generic source: {source_name}")
+
+        # Check for USB camera sources
+        elif node.type == "v4l2src":
+            source_name = node.data.get("device", "/dev/video0")
+            node.data.clear()
+            node.type = "source"
+            node.data["kind"] = InputKind.CAMERA
+            node.data["source"] = source_name
+            logger.debug(f"Converted v4l2src to generic source (camera): {source_name}")
+
+        # Check for RTSP camera sources
+        elif node.type == "rtspsrc":
+            source_name = node.data.get("location", "")
+            node.data.clear()
+            node.type = "source"
+            node.data["kind"] = InputKind.CAMERA
+            node.data["source"] = source_name
+            logger.debug(f"Converted rtspsrc to generic source (camera): {source_name}")
+
+
+def _validate_camera_source_followed_by_decodebin3(
+    nodes: list[Node],
+    edges: list[Edge],
+) -> None:
+    """
+    Validate that all camera sources (rtspsrc or v4l2src) are followed by decodebin3.
+
+    This validation ensures that camera pipelines have the required decoder element
+    after the source element to properly handle the incoming stream.
+
+    This function only validates direct camera source nodes (v4l2src, rtspsrc) which
+    appear in advanced view.
+
+    Args:
+        nodes: List of all nodes in the graph
+        edges: List of all edges connecting the nodes
+
+    Returns:
+        None
+
+    Raises:
+        ValueError: If any camera source is not followed by any element
+        ValueError: If any camera source is not followed by decodebin3
+
+    Example:
+        Validates that: rtspsrc -> decodebin3 or v4l2src -> decodebin3
+    """
+    # Build a mapping of node IDs to nodes for quick lookup
+    node_by_id = {node.id: node for node in nodes}
+
+    # Build adjacency map for outgoing edges
+    edges_from: dict[str, list[str]] = {}
+    for edge in edges:
+        edges_from.setdefault(edge.source, []).append(edge.target)
+
+    for node in nodes:
+        if node.type not in {"v4l2src", "rtspsrc"}:
+            continue
+
+        next_nodes = edges_from.get(node.id, [])
+        if not next_nodes:
+            raise ValueError(
+                f"Camera source '{node.type}' requires a decodebin3 element to follow it, "
+                "but no element follows the camera source"
+            )
+
+        next_node_id = next_nodes[0]
+        next_node = node_by_id.get(next_node_id)
+
+        if not next_node or next_node.type != "decodebin3":
+            next_type = next_node.type if next_node else "unknown"
+            raise ValueError(
+                f"Camera source '{node.type}' requires a decodebin3 element to follow it, "
+                f"but found '{next_type}' instead"
+            )
 
 
 def _labels_path_to_display_name(nodes: list[Node]) -> None:

@@ -167,7 +167,7 @@ class CameraManager:
         It does not trigger new discovery - use discover_* methods first if needed.
 
         Args:
-            camera_id: Camera identifier (e.g., "usb_camera_0" or "network_camera_192.168.1.100_80").
+            camera_id: Camera identifier (e.g., "usb-camera-0" or "network-camera-192.168.1.100-80").
 
         Returns:
             Camera object if found, None otherwise.
@@ -201,7 +201,7 @@ class CameraManager:
         and updates the cached camera object with the profile information.
 
         Args:
-            camera_id: Camera identifier (e.g., "network_camera_192.168.1.100_80").
+            camera_id: Camera identifier (e.g., "network-camera-192.168.1.100-80").
             username: ONVIF username for authentication.
             password: ONVIF password for authentication.
 
@@ -215,7 +215,7 @@ class CameraManager:
         """
         self.logger.debug(f"Loading profiles for camera {camera_id}")
 
-        if not camera_id.startswith("network_camera_"):
+        if not camera_id.startswith("network-camera-"):
             error_msg = "Invalid camera type - only network cameras supported"
             self.logger.error(error_msg)
             raise ValueError(error_msg)
@@ -242,3 +242,31 @@ class CameraManager:
                     break
 
         return authenticated_camera
+
+    def get_encoding_for_rtsp_url(self, rtsp_url: str) -> Optional[str]:
+        """Get encoding for a given RTSP URL from cached ONVIF profiles.
+
+        Network camera profiles (including `encoding` and `rtsp_url`) are only
+        populated after successful authentication via `load_camera_profiles()`.
+        This method does not trigger discovery/authentication; it only searches
+        the in-memory cache.
+
+        Args:
+            rtsp_url: RTSP URL that appears in a profile (e.g. "rtsp://.../stream")
+
+        Returns:
+            Encoding string from the matching profile (e.g. "H264", "H265"),
+            or None if not found.
+        """
+        if not rtsp_url:
+            return None
+
+        normalized = rtsp_url.strip()
+        with self._lock:
+            for camera in self._network_cameras:
+                profiles = getattr(getattr(camera, "details", None), "profiles", None)
+                for profile in profiles or []:
+                    if getattr(profile, "rtsp_url", None) == normalized:
+                        return getattr(profile, "encoding", None)
+
+        return None
