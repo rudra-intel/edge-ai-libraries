@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- [System Requirements](./get-started/system-requirements.md)
+- [System Requirements](../get-started/system-requirements.md)
 - K8s installation on single or multi node must be done as pre-requisite to continue
   the following deployment. Note: The kubernetes cluster is set up with `kubeadm`,
   `kubectl` and `kubelet` packages on single and multi nodes with `v1.30.2`.
@@ -23,14 +23,14 @@
 
     1. Download helm chart with the following command
 
-        `helm pull oci://registry-1.docker.io/intel/time-series-analytics-microservice --version 2026.0.0-<date>-weekly`
+        `helm pull oci://registry-1.docker.io/intel/time-series-analytics-microservice --version 2026.0.0-<date>-weekly-helm`
 
         Replace `<date>` with the actual patch version date (e.g., `20260120` for January 20th, 2026).
-        `helm pull oci://registry-1.docker.io/intel/time-series-analytics-microservice --version 2026.0.0-20260120-weekly`
+        `helm pull oci://registry-1.docker.io/intel/time-series-analytics-microservice --version 2026.0.0-20260120-weekly-helm`
 
     2. unzip the package using the following command
 
-        `tar -xvzf time-series-analytics-microservice-2026.0.0-<date>-weekly.tgz`
+        `tar -xvzf time-series-analytics-microservice-2026.0.0-<date>-weekly-helm.tgz`
 
     - Get into the helm directory
 
