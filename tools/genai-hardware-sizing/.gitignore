@@ -16,3 +16,4 @@ venv/
 dist/
 build/
 .pytest_cache/
+*.mp4

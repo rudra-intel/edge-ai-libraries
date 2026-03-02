@@ -15,7 +15,7 @@ import os
 import yaml
 import requests
 import shutil
-from moviepy.editor import VideoFileClip
+from moviepy import VideoFileClip
 
 
 def safe_parse_string_to_dict(data_string):
@@ -858,7 +858,7 @@ def start_perf_tool(repo_url, report_dir):
              This directory is created as 'perf_tool_logs' inside report_dir.
     """
     repo_name = "performance-tools"
-    compose_file = os.path.join(repo_name, 'docker', 'docker-compose.yaml')
+    compose_file = os.path.join(repo_name, 'docker', 'docker-compose-reg.yaml')
     
     # Create log directory
     log_dir = os.path.join(report_dir, "perf_tool_logs")
@@ -1157,12 +1157,12 @@ def get_video_summary_telemetry_kpis(start_time, end_time, telemetry_json_respon
         video_properties['Average_Completion_Tokens'] = output_tokens
         video_properties['Average_Total_Tokens'] = total_tokens
         video_properties['Average_Time_Per_Output_Token (s)'] = tpot / 1000
-        video_properties['Time_To_First_Token (s)'] = ttft / 1000
-        video_properties['Token_Per_Second'] = tps
-        video_properties['Video_Summary_Pre_Processing_Time (s)'] = delta
-        video_properties['Video_Summary_E2E_Latency (s)'] = e2e_summary_latency
-        video_properties['Video RTF (latency/duration)'] = rtf
-        video_properties['Video Complexity'] = complexity
+        video_properties['Time To First Token (s)'] = ttft / 1000
+        video_properties['Throughput (tokens/sec)'] = tps
+        video_properties['Video Summary Pre ProcessingTime (s)'] = delta
+        video_properties['Video Summary E2E Latency (s)'] = e2e_summary_latency
+        video_properties['Video Summarization RTF (latency/duration)'] = rtf
+        video_properties['Video Summary Processing Efficiency ((fps*duration)/latency)'] = complexity
 
         return video_properties, telemetry_details
 
@@ -1194,7 +1194,7 @@ def convert_summary_metrics_to_wsf_format(report_dir, json_file_path, samples=No
         
         # Write the JSON data
         for key, value in data.items():
-            if key in ['File_Size (MB)', 'File_Duration (s)', 'File_videoFPS', 'Time_To_First_Token (s)','Token_Per_Second', 'Video_Summary_Pre_Processing_Time (s)', 'Video_Summary_E2E_Latency (s)', 'Video RTF (latency/duration)', 'Video Complexity']:
+            if key in ['File_Duration (s)', 'File_videoFPS', 'Time To First Token (s)','Throughput (tokens/sec)', 'Video Summary Pre ProcessingTime (s)', 'Video Summary E2E Latency (s)', 'Video Summarization RTF (latency/duration)', 'Video Summary Processing Efficiency ((fps*duration)/latency)']:
                 writer.writerow([key, value])
 
     print(f"WSF formatted output written to: {output_file}")
@@ -1331,7 +1331,9 @@ def get_video_search_telemetry_kpis(start_time, end_time, telemetry_json_respons
                     video_details["embedding_percent_of_total"] = stage.get("percent_of_total", 0)
             
             video_details["wall_time_seconds"] = item.get("timestamps", {}).get("wall_time_seconds", 0)
-            video_details["embedding_per_sec"] = item.get("throughput", {}).get("embeddings_per_second", 0)         
+            video_details["embedding_per_sec"] = item.get("throughput", {}).get("embeddings_per_second", 0)     
+            relative_rtf = (video_details.get("wall_time_seconds", 0) / video_details.get("duration_seconds", 1)) * (30 / video_details.get("fps", 1))   
+            video_details["Normalized_Embedding_RTF"] = round(relative_rtf, 4) 
             input_videos.append(video_details)            
             
         except (ValueError, TypeError, KeyError) as e:
@@ -1390,20 +1392,23 @@ def convert_search_metrics_to_wsf_format(report_dir, json_file_path):
     
     for idx, video in enumerate(videos, start=1):
         video_prefix = f"Video_{idx}"
+            
         
        # rows.append([f"{video_prefix} file size(Mb)", 0.0])
         rows.append([f"{video_prefix}_00_duration (s)", video.get('duration_seconds', 0.0)])
         rows.append([f"{video_prefix}_01_FPS", video.get('fps', 0.0)])
         rows.append([f"{video_prefix}_02_total_frames", video.get('total_frames', 0)])
         rows.append([f"{video_prefix}_03_frames_extracted", video.get('frames_extracted', 0)])
-        rows.append([f"{video_prefix}_04_embedding_FPS", video.get('embedding_per_sec', 0.0)])
+        rows.append([f"{video_prefix}_04_Embedding_Throughput (frames/sec)", video.get('embedding_per_sec', 0.0)])
+        # rows.append([f"{video_prefix}_05_Relative_RTF ((embedding latency/duration)*(30/FPS))", round(relative_rtf, 4)])
+        # rows.append([f"{video_prefix}_05_Normalized_Embedding_RTF", round(relative_rtf, 4)])
         if 'embedding_per_sec' in video:
             embedding_per_sec_values.append(video['embedding_per_sec'])
     
     embedding_avg, embedding_min, embedding_max = calculate_metrics(embedding_per_sec_values)[:3]
-    rows.append(["embedding_FPS_min", embedding_min])
-    rows.append(["embedding_FPS_avg", embedding_avg])
-    rows.append(["embedding_FPS_max", embedding_max])
+    rows.append(["Embedding_Throughput_min (frames/sec)", embedding_min])
+    rows.append(["Embedding_Throughput_avg (frames/sec)", embedding_avg])
+    rows.append(["Embedding_Throughput_max (frames/sec)", embedding_max])
     
     
     # Write to CSV file
@@ -1414,6 +1419,7 @@ def convert_search_metrics_to_wsf_format(report_dir, json_file_path):
     print(f"WSF formatted output written to: {output_file}")
 
     return output_file
+
 
 
 
