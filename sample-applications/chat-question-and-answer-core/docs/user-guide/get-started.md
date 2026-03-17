@@ -10,7 +10,7 @@ By following this guide, you will learn how to:
 
 ## Prerequisites
 
-- Verify that your system meets the [minimum requirements](./system-requirements.md).
+- Verify that your system meets the [minimum requirements](./get-started/system-requirements.md).
 - Install Docker: [Installation Guide](https://docs.docker.com/get-docker/).
 - Install Docker Compose: [Installation Guide](https://docs.docker.com/compose/install/).
 
@@ -43,17 +43,17 @@ By following this guide, you will learn how to:
 
    ```bash
    export REGISTRY="intel/"
-   export UI_TAG=core_1.3.0
+   export UI_TAG=core_1.3.2
 
    # If you prefer to use the default CPU device, set the following:
-   export BACKEND_TAG=core_1.3.1
+   export BACKEND_TAG=core_1.3.2
 
    # If you want to utilize GPU device for inferencing, set the following:
    # Note: This image also supports CPU devices.
-   export BACKEND_TAG=core_gpu_1.3.1
+   export BACKEND_TAG=core_gpu_1.3.2
 
    # For those who prefer Ollama framework, set the following:
-   export BACKEND_TAG=core_ollama_1.3.1
+   export BACKEND_TAG=core_ollama_1.3.2
    ```
 
    Skip this step if you prefer to build the sample application from source. For detailed instructions, refer to **[How to Build from Source](./build-from-source.md)** guide for details.
@@ -161,7 +161,7 @@ For alternative ways to set up the sample application, see:
 ## Supporting Resources
 
 - [Docker Compose Documentation](https://docs.docker.com/compose/)
-- [API Reference](./api-docs/chatqna-api.yml)
+- [API Reference](./_assets/chatqna-api.yml)
 
 <!--hide_directive
 :::{toctree}
