@@ -1,0 +1,12 @@
+cd /tools/genai-applications-sizing/common/rtsp-streamer
+docker build -t rtsp-streamer-url .
+
+
+docker run -d --name rtsp-streamer \
+  -p 8554:8554 \
+  -e VIDEO_URL="https://example.com/sample.mp4" \
+  rtsp-streamer-url
+
+
+rtsp://localhost:8554/video
+
