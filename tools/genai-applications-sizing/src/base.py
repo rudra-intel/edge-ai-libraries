@@ -128,7 +128,9 @@ class BasePerformanceProfiler(ABC):
             str: Path to log directory if started, None otherwise.
         """
         if self.collect_resource_metrics:
-            return start_perf_tool(repo_url=self.perf_tool_repo, report_dir=report_dir)
+            log_dir, compose_file = start_perf_tool(repo_url=self.perf_tool_repo, report_dir=report_dir)
+            return log_dir, compose_file
+        return None, None 
 
     
     def stop_metrics_collection(self, compose_file):
