@@ -129,7 +129,7 @@ class BasePerformanceProfiler(ABC):
         """
         if self.collect_resource_metrics:
             return start_perf_tool(repo_url=self.perf_tool_repo, report_dir=report_dir)
-        return None
+
     
     def stop_metrics_collection(self, compose_file):
         """Stop performance metrics collection and generate graphs."""
