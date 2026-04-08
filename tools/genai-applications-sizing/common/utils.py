@@ -172,7 +172,7 @@ def get_response(response, report_dir, answer=None):
         answer: Pre-processed answer string (optional).
     """
     responses_dir = os.path.join(report_dir, "responses")
-    os.makedirs(responses_dir, exist_ok=True)
+    os.makedirs(responses_dir, mode=0o750, exist_ok=True)
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = os.path.join(responses_dir, f"chat_response_{timestamp}.txt")

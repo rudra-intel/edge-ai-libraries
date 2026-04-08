@@ -114,7 +114,7 @@ class BasePerformanceProfiler(ABC):
         """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         report_dir = os.path.join(self.report_dir, f"{self.app_name}_{timestamp}")
-        os.makedirs(report_dir, exist_ok=True)
+        os.makedirs(report_dir, mode=0o750, exist_ok=True)
         return report_dir
     
     def start_metrics_collection(self, report_dir):

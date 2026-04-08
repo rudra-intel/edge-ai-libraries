@@ -117,7 +117,7 @@ class VideoSearchHwSize(HttpUser):
 
         # Report directory
         VideoSearchHwSize.report_dir = os.path.join(opts.report_dir, "video_search")
-        os.makedirs(VideoSearchHwSize.report_dir, exist_ok=True)
+        os.makedirs(VideoSearchHwSize.report_dir,mode=0o750, exist_ok=True)
 
         # Parse inputs
         file_details = safe_parse_string_to_dict(opts.file_details)

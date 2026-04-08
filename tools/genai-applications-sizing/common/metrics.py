@@ -790,7 +790,7 @@ def save_live_video_caption_telemetry_kpis(report_dir, kpis_by_run_id, run_confi
     Returns:
         str: Path to the summary file.
     """
-    os.makedirs(report_dir, exist_ok=True)
+    os.makedirs(report_dir, mode=0o750, exist_ok=True)
     run_configs = run_configs or {}
     
     filename = os.path.join(report_dir, "live_caption_indv_metrics.json")

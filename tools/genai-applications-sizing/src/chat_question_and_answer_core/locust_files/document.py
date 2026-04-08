@@ -51,7 +51,7 @@ class CoreDocHwSize(HttpUser):
 
         # Create report directory
         CoreDocHwSize.report_dir = os.path.join(report_dir, "document")
-        os.makedirs(CoreDocHwSize.report_dir, exist_ok=True)
+        os.makedirs(CoreDocHwSize.report_dir, mode=0o750, exist_ok=True)
 
         # Initialize latency tracking
         CoreDocHwSize.latencies = []

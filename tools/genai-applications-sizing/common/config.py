@@ -190,7 +190,7 @@ def get_global_details(config):
     profile_path = global_details.get('input_profiles_path', 'profiles/profiles.yaml')
 
     # Ensure report directory exists and set up permissions
-    os.makedirs(report_dir, exist_ok=True)
+    os.makedirs(report_dir, mode=0o750, exist_ok=True)
     setup_report_permissions(report_dir)
 
     return report_dir, perf_tool_repo, profile_path

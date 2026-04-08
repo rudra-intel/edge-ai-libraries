@@ -71,7 +71,7 @@ class LiveCaptionHwSize(HttpUser):
         if not LiveCaptionHwSize.report_dir:
             report_dir = parsed_opts.report_dir
             LiveCaptionHwSize.report_dir = os.path.join(report_dir, "live_video_caption")
-            os.makedirs(LiveCaptionHwSize.report_dir, exist_ok=True)
+            os.makedirs(LiveCaptionHwSize.report_dir,mode=0o750, exist_ok=True)
         
         payload = self.payload[0].get("run")
         if self.warmup_time > 0:

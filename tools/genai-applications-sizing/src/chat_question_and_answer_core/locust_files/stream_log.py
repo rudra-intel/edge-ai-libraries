@@ -49,7 +49,7 @@ class StreamCoreHwSize(HttpUser):
 
         # Setup report directory
         StreamCoreHwSize.report_dir = os.path.join(report_dir, "chat")
-        os.makedirs(StreamCoreHwSize.report_dir, exist_ok=True)
+        os.makedirs(StreamCoreHwSize.report_dir,mode=0o750, exist_ok=True)
 
         # Initialize metrics storage
         StreamCoreHwSize.all_metrics = []

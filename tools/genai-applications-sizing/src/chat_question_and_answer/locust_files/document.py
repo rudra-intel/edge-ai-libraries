@@ -51,7 +51,7 @@ class DocHwSize(HttpUser):
 
         # Create report directory
         DocHwSize.report_dir = os.path.join(report_dir, "document")
-        os.makedirs(DocHwSize.report_dir, exist_ok=True)
+        os.makedirs(DocHwSize.report_dir, mode=0o750, exist_ok=True)
 
         # Initialize latency tracking
         DocHwSize.latencies = []

@@ -124,7 +124,7 @@ class VideoSummaryHwSize(HttpUser):
             VideoSummaryHwSize.states_url = f"{self.host}:{opts.state_endpoint}"
             report_dir = os.path.join(opts.report_dir, "video_summary")
             VideoSummaryHwSize.report_dir = report_dir
-            os.makedirs(report_dir, exist_ok=True)
+            os.makedirs(report_dir, mode=0o750, exist_ok=True)
 
         # Parse and cache the request payload once per user instance
         self._payload = safe_parse_string_to_dict(opts.payload)

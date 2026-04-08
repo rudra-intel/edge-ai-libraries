@@ -55,7 +55,7 @@ class ChatHwSize(HttpUser):
 
         # Create report directory
         ChatHwSize.report_dir = os.path.join(report_dir, "chat")
-        os.makedirs(ChatHwSize.report_dir, exist_ok=True)
+        os.makedirs(ChatHwSize.report_dir, mode=0o750, exist_ok=True)
         ChatHwSize.all_metrics = []
 
         print("Locust started sending traffic to the Chat API...")
