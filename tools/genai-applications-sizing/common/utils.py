@@ -22,14 +22,14 @@ def setup_report_permissions(report_dir):
     Set up permissions on the report directory and configure umask for inheritance.
     
     All subdirectories and files created after this call will inherit permissions:
-    - Directories: 0o770 (rwxrwx---)
-    - Files: 0o660 (rw-rw----)
+    - Directories: 0o750 (rwxr-x---)
+    - Files: 0o640 (rw-r-----)
     
     Args:
         report_dir: Path to the root report directory.
     """
-    DIRECTORY_PERMISSION = 0o770
-    UMASK_VALUE = 0o007
+    DIRECTORY_PERMISSION = 0o750
+    UMASK_VALUE = 0o027
 
     os.umask(UMASK_VALUE)
     
