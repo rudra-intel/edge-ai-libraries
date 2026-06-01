@@ -2,14 +2,21 @@
 
 ## Current Release
 
+**Version**: 2026.1.0-rc1 \
+**Release Date**: WW20 2026
+
+- Making HF token as an optional. Only required when user downloading gated models.
+- Upgrade OLLAMA binary version.
+- Dependency Upgrades. Upgraded application dependencies flagged by Dependabot for known vulnerabilities.
+
+## Previous Releases
+
 **Version**: 1.3.2 \
 **Release Date**: WW09 2026
 
 -  Upgrade Ollama binary to latest version 0.17.0.
 -  Upgrade GPU drivers for PTL support.
 -  Dependency Upgrades. Upgraded application dependencies flagged by Dependabot for known vulnerabilities.
-
-## Previous Releases
 
 **Version**: 1.3.1 \
 **Release Date**: WW48 2025
@@ -40,7 +47,7 @@
 **Version**: 1.2.1 \
 **Release Date**: WW27 2025
 
-- Image Optimization for ChatQnA Core Backend. Reducing image sizes, which will lead to faster processing times and reduced bandwidth usage.
+- Image Optimization for the Chat Q&A Core Backend. Reducing image sizes, which will lead to faster processing times and reduced bandwidth usage.
 - Security Vulnerabilities Fix for Dependency Packages.
 - Update in Setup Scripts for default model download path in the backend.
 - Bug fixes.
