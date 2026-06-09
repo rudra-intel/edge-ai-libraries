@@ -13,8 +13,12 @@ FROM bluenviron/mediamtx:1.15.6 AS mediamtx
 # ================================
 FROM alpine:3.19
 
+RUN addgroup -g 1000 appuser && \
+    adduser -D -G appuser appuser
+
 # ---- Install dependencies ----
 RUN apk add --no-cache \
+        bash \
         ffmpeg \
         busybox-extras \
         curl
@@ -28,7 +32,7 @@ COPY --from=mediamtx /mediamtx.yml ./mediamtx.yml
 
 # ---- Startup script ----
 COPY start.sh ./start.sh
-RUN chmod +x ./start.sh ./mediamtx
+RUN sed -i 's/\r$//' ./start.sh && chmod +x ./start.sh ./mediamtx
 
 # ---- Runtime config ----
 ENV MEDIA_DIR=/media \
