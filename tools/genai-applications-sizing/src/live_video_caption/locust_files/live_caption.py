@@ -98,7 +98,9 @@ class LiveCaptionHwSize(HttpUser):
                     LiveCaptionHwSize.run_configs[run_id] = {
                         "rtspUrl": payload_dict.get("rtspUrl"),
                         "modelName": payload_dict.get("modelName"),
-                        "pipelineName": payload_dict.get("pipelineName")
+                        "pipelineName": payload_dict.get("pipelineName"),
+                        "frameRate": payload_dict.get("frameRate"),
+                        "chunkSize": payload_dict.get("chunkSize")
                     }
                     print(f"Started live caption pipeline with runId: {run_id}")
                     print(f"Make sure Model: {payload_dict.get('modelName')} is downloaded. If not, download the model and update the payload with correct model name before running the test")

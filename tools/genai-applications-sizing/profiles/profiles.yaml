@@ -253,32 +253,41 @@ profiles:
     input_type: "rtsp stream"
     input_size: "2 parallel runs" 
     payloads:
-      - run: '{ "rtspUrl": "rtsp://<ip:port/name>",
+      - run: '{ "rtspUrl": "rtsp://10.223.22.202:8554/video",
                 "prompt": "Describe what you see in one sentence.",
                 "detectionModelName": null,
                 "detectionThreshold": null,
                 "modelName": "InternVL2-1B",
                 "maxNewTokens": 70,
-                "pipelineName": "GenAI_Pipeline_on_GPU"
+                "pipelineName": "GenAI_Pipeline_on_GPU_Default_Resolution",
+                "frameRate": 1,
+                "chunkSize": 1,
+                "runName": "GPU_Run"
               }'
-      - run: '{ "rtspUrl": "rtsp://<ip:port/name>",
+      - run: '{ "rtspUrl": "rtsp://10.223.22.202:8554/video",
                 "prompt": "Describe what you see in one sentence.",
                 "detectionModelName": null,
                 "detectionThreshold": null,
-                "modelName": "InternVL3-1B",
+                "modelName": "InternVL2-1B",
                 "maxNewTokens": 70,
-                "pipelineName": "GenAI_Pipeline_on_CPU"
+                "pipelineName": "GenAI_Pipeline_on_CPU_Default_Resolution",
+                "frameRate": 1,
+                "chunkSize": 1,
+                "runName": "CPU_Run"
               }'
   
   live_video_caption_wsf:
     input_type: "rtsp stream"
     input_size: "single run" 
     payloads:
-      - run: '{ "rtspUrl": "rtsp://<ip:port/name>",
+      - run: '{ "rtspUrl": "rtsp://10.223.22.202:8554/video",
                 "prompt": "Describe what you see in one sentence.",
                 "detectionModelName": null,
                 "detectionThreshold": null,
-                "modelName": "InternVL2-1B",
+                "modelName": "gemma-3-4b-it",
                 "maxNewTokens": 70,
-                "pipelineName": "GenAI_Pipeline_on_GPU"
+                "pipelineName": "GenAI_Pipeline_on_GPU_Default_Resolution",
+                "frameRate": 1,
+                "chunkSize": 1,
+                "runName": "GPU_Run"
               }'

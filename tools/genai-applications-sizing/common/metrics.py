@@ -720,21 +720,23 @@ def get_live_caption_metrics(metadata_list):
         json_string = metadata[6:]
         try:
             parsed_data = json.loads(json_string)
-            run_id = parsed_data.get("runId", "unknown")
-            metrics = parsed_data.get("data", {}).get("metrics", {})
-            
-            kpis = {
-                "InputTokens": metrics.get("num_input_tokens"),
-                "TotalGeneratedTokens": metrics.get("num_generated_tokens"),
-                "TTFT (ms)": metrics.get("ttft_mean"),
-                "TPOT (ms)": metrics.get("tpot_mean"),
-                "Latency (ms)": metrics.get("generate_duration_mean"),
-                "Throughput (tok/s)": metrics.get("throughput_mean")
-            }
-            
-            if run_id not in kpis_by_run_id:
-                kpis_by_run_id[run_id] = []
-            kpis_by_run_id[run_id].append(kpis)
+            if parsed_data.get("runId"):
+                run_id = parsed_data.get("runId", "unknown")
+                metrics = parsed_data.get("data", {}).get("metrics", {})
+                resolution = parsed_data.get("data", {}).get("resolution", {})
+                kpis = {
+                    "InputTokens": metrics.get("num_input_tokens"),
+                    "TotalGeneratedTokens": metrics.get("num_generated_tokens"),
+                    "TTFT (ms)": metrics.get("ttft_mean"),
+                    "TPOT (ms)": metrics.get("tpot_mean"),
+                    "Latency (ms)": metrics.get("generate_duration_mean"),
+                    "Throughput (tok/s)": metrics.get("throughput_mean"),
+                    "Resolution_Width": resolution.get("width"),
+                    "Resolution_Height": resolution.get("height")
+                }
+                if run_id not in kpis_by_run_id:
+                    kpis_by_run_id[run_id] = []
+                kpis_by_run_id[run_id].append(kpis)
             
         except json.JSONDecodeError as e:
             print(f"Skipping invalid JSON data: {e}")
@@ -770,18 +772,22 @@ def save_live_video_caption_telemetry_kpis(report_dir, kpis_by_run_id, run_confi
             continue
         
         config = run_configs.get(run_id, {})
-        
         run_summary = {
             "rtspUrl": config.get("rtspUrl"),
             "modelName": config.get("modelName"),
             "pipelineName": config.get("pipelineName"),
+            "Resolution_Width": max(kpi["Resolution_Width"] for kpi in kpis_list if kpi["Resolution_Width"] is not None) if kpis_list else None,
+            "Resolution_Height": max(kpi["Resolution_Height"] for kpi in kpis_list if kpi["Resolution_Height"] is not None) if kpis_list else None,
+            "Frame Rate": config.get("frameRate"),
+            "Chunk Size": config.get("chunkSize"),
             "sample_count": len(kpis_list),
             "Total InputTokens": max(kpi["InputTokens"] for kpi in kpis_list if kpi["InputTokens"] is not None) if kpis_list else None,
             "Total GeneratedTokens": max(kpi["TotalGeneratedTokens"] for kpi in kpis_list if kpi["TotalGeneratedTokens"] is not None) if kpis_list else None,
             "Average TTFT (ms)": sum(kpi["TTFT (ms)"] for kpi in kpis_list if kpi["TTFT (ms)"] is not None) / len(kpis_list),
             "Average TPOT (ms)": sum(kpi["TPOT (ms)"] for kpi in kpis_list if kpi["TPOT (ms)"] is not None) / len(kpis_list),
             "Average Latency (ms)": sum(kpi["Latency (ms)"] for kpi in kpis_list if kpi["Latency (ms)"] is not None) / len(kpis_list),
-            "Average Throughput (tok/s)": sum(kpi["Throughput (tok/s)"] for kpi in kpis_list if kpi["Throughput (tok/s)"] is not None) / len(kpis_list)
+            "Average Throughput (tok/s)": sum(kpi["Throughput (tok/s)"] for kpi in kpis_list if kpi["Throughput (tok/s)"] is not None) / len(kpis_list),
+            
         }
         summary[run_id] = run_summary
     
@@ -809,12 +815,16 @@ def save_metrics_to_wsf_format(report_dir, summary_file, live_caption_duration_s
         writer = csv.writer(f)
         
         for run_id, metrics in summary.items():
-            writer.writerow(["Avg TTFT (ms)", metrics.get("Average TTFT (ms)", 0)])
-            writer.writerow(["Avg TPOT (ms)", metrics.get("Average TPOT (ms)", 0)])
-            writer.writerow(["Avg Latency (ms)", metrics.get("Average Latency (ms)", 0)])
-            writer.writerow(["Avg Throughput (tok/s)", metrics.get("Average Throughput (tok/s)", 0)])
-            writer.writerow(["Caption Duration (s)", live_caption_duration_seconds])
-            writer.writerow(["Total Requests (count)", metrics.get("sample_count", 0)])
+            writer.writerow([f"{run_id}_Avg TTFT (ms)", metrics.get("Average TTFT (ms)", 0)])
+            writer.writerow([f"{run_id}_Avg TPOT (ms)", metrics.get("Average TPOT (ms)", 0)])
+            writer.writerow([f"{run_id}_Avg Latency (ms)", metrics.get("Average Latency (ms)", 0)])
+            writer.writerow([f"{run_id}_Avg Throughput (tok/s)", metrics.get("Average Throughput (tok/s)", 0)])
+            writer.writerow([f"{run_id}_Caption Duration (s)", live_caption_duration_seconds])
+            writer.writerow([f"{run_id}_Total Requests (count)", metrics.get("sample_count", 0)])
+            writer.writerow([f"{run_id}_Resolution Height", metrics.get("Resolution_Height", 0)])
+            writer.writerow([f"{run_id}_Resolution Width", metrics.get("Resolution_Width", 0)])
+            writer.writerow([f"{run_id}_Frame Rate", metrics.get("Frame Rate", 0)])
+            writer.writerow([f"{run_id}_Chunk Size", metrics.get("Chunk Size", 0)])
             writer.writerow([])
     
     print(f"WSF formatted live caption metrics written to: {output_file}")
