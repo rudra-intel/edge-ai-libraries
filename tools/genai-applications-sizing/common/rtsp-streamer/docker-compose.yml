@@ -2,14 +2,14 @@
 # SPDX-License-Identifier: Apache-2.0
 
 services:
-  rtsp-server:
+  mediamtx:
     image: bluenviron/mediamtx:1.15.6
     container_name: rtsp-server
     restart: unless-stopped
     ports:
       - "${RTSP_PORT:-8554}:8554"
 
-  rtsp-streamer:
+  ffmpeg:
     image: jrottenberg/ffmpeg:7.0-alpine
     container_name: rtsp-streamer
     restart: unless-stopped
