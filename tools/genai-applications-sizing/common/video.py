@@ -356,7 +356,7 @@ def get_live_caption_metadata(url, duration_seconds=120):
         try:
             for line in response.iter_lines(decode_unicode=True):
                 if time.time() >= end_time:
-                    print(f"\nCollection complete. Collected {len(collected_data)} data entries.")
+                    print(f"Collection complete. Collected {len(collected_data)} data entries.")
                     break
                 if line and "data" in line:
                     collected_data.append(line)

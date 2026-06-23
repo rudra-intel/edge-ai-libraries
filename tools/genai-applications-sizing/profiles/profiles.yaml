@@ -284,10 +284,46 @@ profiles:
                 "prompt": "Describe what you see in one sentence.",
                 "detectionModelName": null,
                 "detectionThreshold": null,
-                "modelName": "gemma-3-4b-it",
+                "modelName": "InternVL2-1B",
                 "maxNewTokens": 70,
                 "pipelineName": "GenAI_Pipeline_on_GPU_Default_Resolution",
                 "frameRate": 1,
                 "chunkSize": 1,
                 "runName": "GPU_Run"
               }'
+
+  live_caption_rag_warmup_profile:
+    input_type: "rtsp stream"
+    input_size: "single run" 
+    payloads:
+      - run: '{ "rtspUrl": "rtsp://10.223.22.202:8554/video",
+                "prompt": "Describe what you see in one sentence.",
+                "detectionModelName": null,
+                "detectionThreshold": null,
+                "modelName": "InternVL2-1B",
+                "maxNewTokens": 70,
+                "pipelineName": "GenAI_Pipeline_on_GPU_Default_Resolution",
+                "frameRate": 1,
+                "chunkSize": 1,
+                "runName": "WARMUP_Run"
+              }'
+    chat_payloads:
+      - chat: '{ "input": "Summarize what you see in the scene." }'
+
+  live_video_caption_rag_wsf:
+    input_type: "rtsp stream"
+    input_size: "single run" 
+    payloads:
+      - run: '{ "rtspUrl": "rtsp://10.223.22.202:8554/video",
+                "prompt": "Describe what you see in one sentence.",
+                "detectionModelName": null,
+                "detectionThreshold": null,
+                "modelName": "InternVL2-1B",
+                "maxNewTokens": 70,
+                "pipelineName": "GenAI_Pipeline_on_GPU_Default_Resolution",
+                "frameRate": 1,
+                "chunkSize": 1,
+                "runName": "GPU_Run"
+              }'
+    chat_payloads:
+      - chat: '{ "input": "Identify any potential risks or anomalies in the scene." }'

@@ -14,7 +14,7 @@ services:
     container_name: rtsp-streamer
     restart: unless-stopped
     depends_on:
-      - rtsp-server
+      - mediamtx
     environment:
       # A public video URL or a path to a file mounted under /media
       VIDEO_INPUT: ${VIDEO_URL:-/media/video.mp4}

@@ -797,7 +797,7 @@ def save_live_video_caption_telemetry_kpis(report_dir, kpis_by_run_id, run_confi
     return summary_file
 
 
-def save_metrics_to_wsf_format(report_dir, summary_file, live_caption_duration_seconds):
+def save_lvc_metrics_to_wsf_format(report_dir, summary_file, live_caption_duration_seconds):
     """
     Save live caption metrics to WSF CSV format.
     
@@ -815,10 +815,10 @@ def save_metrics_to_wsf_format(report_dir, summary_file, live_caption_duration_s
         writer = csv.writer(f)
         
         for run_id, metrics in summary.items():
-            writer.writerow([f"Avg TTFT (ms)", metrics.get("Average TTFT (ms)", 0)])
-            writer.writerow([f"Avg TPOT (ms)", metrics.get("Average TPOT (ms)", 0)])
-            writer.writerow([f"Avg Latency (ms)", metrics.get("Average Latency (ms)", 0)])
-            writer.writerow([f"Avg Throughput (tok/s)", metrics.get("Average Throughput (tok/s)", 0)])
+            writer.writerow([f"Avg TTFT (ms)", round(metrics.get("Average TTFT (ms)", 0), 2)])
+            writer.writerow([f"Avg TPOT (ms)", round(metrics.get("Average TPOT (ms)", 0), 2)])
+            writer.writerow([f"Avg Latency (ms)", round(metrics.get("Average Latency (ms)", 0), 2)])
+            writer.writerow([f"Avg Throughput (tok/s)", round(metrics.get("Average Throughput (tok/s)", 0), 2)])
             writer.writerow([f"Caption Duration (s)", live_caption_duration_seconds])
             writer.writerow([f"Total Requests (count)", metrics.get("sample_count", 0)])
             writer.writerow([f"Resolution Height", metrics.get("Resolution_Height", 0)])
@@ -828,3 +828,48 @@ def save_metrics_to_wsf_format(report_dir, summary_file, live_caption_duration_s
             writer.writerow([])
     
     print(f"WSF formatted live caption metrics written to: {output_file}")
+
+def save_lvc_rag_metrics_to_wsf_format(report_dir, summary_file, live_caption_duration_seconds, *chat_metrics):
+    """
+    Save live caption RAG metrics to WSF CSV format.
+    
+    Args:
+        report_dir: Directory to save the CSV file.
+        summary_file: Path to the summary JSON file.
+        live_caption_duration_seconds: Duration of caption collection.
+    """
+    output_file = os.path.join(report_dir, "live_caption_rag_metrics_wsf.csv")
+
+    latencies, input_tokens, output_tokens, ttfts, itls, tpss = chat_metrics
+
+    detailed_metrics = {
+            "Request Latency (ms)": calculate_metrics(latencies),
+            "Time to First Token (ms)": calculate_metrics(ttfts),        
+            "Tokens Per Second": calculate_metrics(tpss),
+            "Output Tokens": calculate_metrics(output_tokens)            
+        }
+    
+    with open(summary_file, "r") as file:
+        summary = json.load(file)
+    
+    with open(output_file, 'w', newline='') as f:
+        writer = csv.writer(f)
+        
+        for run_id, metrics in summary.items():
+            writer.writerow([f"LVC_Metric Avg TTFT (ms)", metrics.get("Average TTFT (ms)", 0)])
+            writer.writerow([f"LVC_Metric Avg TPOT (ms)", metrics.get("Average TPOT (ms)", 0)])
+            writer.writerow([f"LVC_Metric Avg Latency (ms)", metrics.get("Average Latency (ms)", 0)])
+            writer.writerow([f"LVC_Metric Avg Throughput (tok/s)", metrics.get("Average Throughput (tok/s)", 0)])
+            writer.writerow([f"LVC_Metric Caption Duration (s)", live_caption_duration_seconds])
+            writer.writerow([f"LVC_Metric Total Requests (count)", metrics.get("sample_count", 0)])
+            writer.writerow([f"LVC_Metric Resolution Height", metrics.get("Resolution_Height", 0)])
+            writer.writerow([f"LVC_Metric Resolution Width", metrics.get("Resolution_Width", 0)])
+            writer.writerow([f"LVC_Metric Frame Rate", metrics.get("Frame Rate", 0)])
+            writer.writerow([f"LVC_Metric Chunk Size", metrics.get("Chunk Size", 0)])
+            writer.writerow([f"Chat_Metric Latency (ms)", round(np.mean(latencies), 2)])
+            writer.writerow([f"Chat_Metric TTFT (ms)", round(np.mean(ttfts), 2)])
+            writer.writerow([f"Chat_Metric Throughput (tok/s)", round(np.mean(tpss), 2)])
+            writer.writerow([f"Chat_Metric Output Tokens", round(np.mean(output_tokens), 2)])
+            writer.writerow([])
+        
+    print(f"WSF formatted live caption RAG metrics written to: {output_file}")

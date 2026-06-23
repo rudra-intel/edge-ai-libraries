@@ -21,7 +21,7 @@ from common.video import (
 from common.metrics import (
     get_live_caption_metrics,
     save_live_video_caption_telemetry_kpis,
-    save_metrics_to_wsf_format,
+    save_lvc_metrics_to_wsf_format
 )
 
 
@@ -123,7 +123,7 @@ def collect_metrics(environment, **kwargs):
         stop_all_run_request(LiveCaptionHwSize.run_url, LiveCaptionHwSize.run_ids)
         all_metrics = get_live_caption_metrics(LiveCaptionHwSize.metrics)
         output_file = save_live_video_caption_telemetry_kpis(LiveCaptionHwSize.report_dir, all_metrics, LiveCaptionHwSize.run_configs)
-        save_metrics_to_wsf_format(LiveCaptionHwSize.report_dir, output_file, LiveCaptionHwSize.caption_duration)
+        save_lvc_metrics_to_wsf_format(LiveCaptionHwSize.report_dir, output_file, LiveCaptionHwSize.caption_duration)
 
     
     
