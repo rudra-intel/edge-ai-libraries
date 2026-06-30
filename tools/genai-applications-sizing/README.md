@@ -4,7 +4,7 @@ The GenAI Applications Sizing Tool is a performance profiling utility for benchm
 
 ## Overview
 
-The GenAI Applications Sizing Tool is:
+The GenAI Applications Sizing Tool key features:
 
 - **Mutli application supports** ChatQnA (Modular & Core), Video Summary and Search, live captioning 
 - **Resource Monitoring** including CPU, GPU, and memory consumption
@@ -20,120 +20,6 @@ The GenAI Applications Sizing Tool is:
 | `chatqna_core` | ChatQnA core application | `profiles/chatqna-core-config.yaml` |
 | `live_caption` | Live video captioning | `profiles/live-video-caption-config.yaml` |
 
-## Architecture
-
-The tool follows a layered architecture. A single CLI entry point (`profile-runner.py`)
-dispatches to an application-specific profiler. All profilers share a common
-`BasePerformanceProfiler` framework and a set of common utilities for configuration,
-load generation (Locust), resource-metrics collection (Dockerized performance-tools),
-and reporting.
-
-```mermaid
-flowchart TB
-    subgraph CLI["CLI Entry Point"]
-        PR["profile-runner.py<br/>(arg parsing &amp; validation)"]
-    end
-
-    subgraph Config["Configuration Layer"]
-        APPCFG["App config YAML<br/>(profiles/*-config.yaml)"]
-        PROFILES["Input profiles YAML<br/>(profiles/profiles.yaml)"]
-        DATA["Test data<br/>(data/*.mp4, *.txt)"]
-    end
-
-    subgraph Profilers["Application Profilers"]
-        BASE["BasePerformanceProfiler<br/>(abstract framework)"]
-        CHAT["chatqna_performance"]
-        CORE["chatqna_core_performance"]
-        VSS["vss_performance"]
-        LVC["lvc_performance"]
-    end
-
-    subgraph Common["Common Utilities"]
-        CFG["config.py"]
-        METR["metrics.py"]
-        PERF["perf_tools.py"]
-        UTILS["utils.py / video.py"]
-    end
-
-    subgraph Load["Load Generation"]
-        LOCUST["Locust load tests<br/>(locust_files/*.py)"]
-    end
-
-    subgraph Monitoring["Resource Monitoring"]
-        PT["performance-tools<br/>(Docker compose)"]
-        QMASA["QMASA metrics<br/>(CPU/GPU/Memory)"]
-    end
-
-    subgraph Target["Target Application (remote host_ip)"]
-        APP["Deployed GenAI App<br/>ChatQnA / VSS / Live Caption"]
-    end
-
-    subgraph Output["Reports"]
-        REPORTS["reports/&lt;app&gt;_&lt;timestamp&gt;/<br/>logs, JSON, CSV, plots"]
-    end
-
-    PR --> CHAT & CORE & VSS & LVC
-    CHAT & CORE & VSS & LVC -.inherit.-> BASE
-    APPCFG --> CFG
-    PROFILES --> CFG
-    DATA --> UTILS
-    BASE --> CFG & METR & PERF
-    CHAT & CORE & VSS & LVC --> LOCUST
-    LOCUST --> APP
-    PERF --> PT --> QMASA
-    QMASA --> METR
-    METR --> REPORTS
-    PT --> REPORTS
-```
-
-### How It Works
-
-The end-to-end profiling run proceeds through warmup, metrics collection, load
-execution against the deployed application, and report generation.
-
-```mermaid
-sequenceDiagram
-    actor User
-    participant CLI as profile-runner.py
-    participant Profiler as App Profiler<br/>(BasePerformanceProfiler)
-    participant Cfg as Config Loader
-    participant Perf as perf_tools<br/>(Docker)
-    participant Locust as Locust Load Test
-    participant App as Deployed GenAI App
-    participant Report as Reports
-
-    User->>CLI: run --app --input --host_ip --collect_resource_metrics
-    CLI->>CLI: validate args (users, IP, counts)
-    CLI->>Profiler: dispatch to selected app profiler
-    Profiler->>Cfg: read app config + input profiles
-    Cfg-->>Profiler: endpoints, profile, report_dir
-    Profiler->>Report: create reports/<app>_<timestamp>/
-
-    opt warmup_time > 0
-        Profiler->>Locust: run warmup requests
-        Locust->>App: prime the system
-    end
-
-    opt collect_resource_metrics = yes
-        Profiler->>Perf: clone performance-tools & docker compose up
-        Perf-->>Profiler: metrics collector running
-    end
-
-    Profiler->>Locust: run profiling (users, request_count)
-    loop per request
-        Locust->>App: API call (chat / summary / search / caption)
-        App-->>Locust: response (latency, tokens, TTFT)
-    end
-    Locust-->>Profiler: raw latency & token metrics
-
-    opt collect_resource_metrics = yes
-        Profiler->>Perf: docker compose down & parse QMASA
-        Perf-->>Report: CPU/GPU/memory plots
-    end
-
-    Profiler->>Report: write JSON/CSV metrics & graphs
-    Report-->>User: reports/<app>_<timestamp>/ results
-```
 
 ## Prerequisites
 
