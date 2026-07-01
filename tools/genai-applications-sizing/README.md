@@ -199,9 +199,9 @@ reports/
 └── video_summary_search_20260320_134736/
     ├── perf_tool_logs/           # Performance tool logs
     └── video_summary/
-        ├── video_summary_metrics_wsf.csv              # Summary metrics
-        ├── video_summary_search_metrics.json          # Detailed metrics
-        ├── video_summary_search_telemetry_details.json # Telemetry data
+        ├── video_summary_metrics_wsf.csv              # metrics for wsf
+        ├── video_summary_search_metrics.json          # metrics summary
+        ├── video_summary_search_telemetry_details.json # Detailed Telemetry data
         └── video_response_*.txt                       # Video response details
 ```
 
