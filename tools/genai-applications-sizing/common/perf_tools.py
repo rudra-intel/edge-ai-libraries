@@ -71,12 +71,18 @@ _SAMPLE_RE = re.compile(
 )
 
 
-def _parse_prometheus_text(text):
+def _parse_prometheus_text(text, keep=None):
     """Parse Prometheus exposition text into a list of metric records.
 
     Returns a list of ``{"name", "labels", "value", "timestamp"}`` dicts, where
     ``timestamp`` is in milliseconds (from the exposition line) or ``None``.
     Non-finite values (NaN / +Inf / -Inf) are skipped.
+
+    If ``keep`` is provided, it is a callable ``keep(name) -> bool`` used to
+    discard unwanted metric names *before* the costly label parsing, so only
+    the metrics that are actually plotted are parsed and retained. This keeps
+    the collector lightweight (minimal CPU) since Telegraf's Prometheus
+    endpoint exposes many more series than the graphs consume.
     """
     records = []
     for line in text.splitlines():
@@ -87,6 +93,8 @@ def _parse_prometheus_text(text):
         if not match:
             continue
         name, label_block, raw_value, raw_ts = match.groups()
+        if keep is not None and not keep(name):
+            continue
         try:
             value = float(raw_value)
         except ValueError:
@@ -122,7 +130,7 @@ def _poll_worker(url, output, stop_event, interval=_POLL_INTERVAL):
             try:
                 resp = requests.get(url, timeout=5)
                 resp.raise_for_status()
-                metrics = _parse_prometheus_text(resp.text)
+                metrics = _parse_prometheus_text(resp.text, keep=_wanted_metric)
                 if metrics:
                     poll_ms = int(time.time() * 1000)
                     sink.write(
@@ -180,8 +188,7 @@ def start_perf_tool(repo_url, report_dir):
         subprocess.run(
             [
                 'docker', 'run', '-d', '--name', _CONTAINER_NAME,
-                # '--privileged',
-                # '--security-opt', 'apparmor=unconfined',
+                '--privileged',
                 '--device', '/dev/dri:/dev/dri',
                 '-v', '/sys:/sys:ro',
                 '-v', '/run:/run:ro',
@@ -305,6 +312,15 @@ def _categorize(name):
     if name == "npu_utilization":
         return "NPU (%)"
     return None
+
+
+def _wanted_metric(name):
+    """Return True only for metric names that end up on a graph panel.
+
+    Used to filter the Prometheus scrape down to the handful of plotted series
+    (see ``_categorize``), keeping collection lightweight and the log small.
+    """
+    return _categorize(name) is not None
 
 
 def _series_label(name, labels):
