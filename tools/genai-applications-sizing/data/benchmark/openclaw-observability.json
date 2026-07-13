@@ -1,0 +1,29 @@
+{
+    "_comment": "OpenClaw observability plugin patch. Apply with: openclaw config patch --file ./benchmark/openclaw-observability.json  then reinstall the gateway: openclaw gateway install. This enables OpenTelemetry export of agent/tool/model spans and metrics. The plugin KEY ('observability') and its config schema follow the same plugins.entries pattern used by openclaw-basic.json; confirm the exact key/fields with 'openclaw plugins list' (see benchmark/README.md). The OTLP endpoint is ALSO driven by the standard OTEL_* env vars in benchmark/otel-env.sh, so export those before starting OpenClaw as the primary/fallback path.",
+    "plugins": {
+        "entries": {
+            "diagnostics": {
+                "enabled": true,
+                "config": {
+                    "exporter": "otlp",
+                    "otlp": {
+                        "endpoint": "http://127.0.0.1:4318",
+                        "protocol": "http/protobuf"
+                    },
+                    "serviceName": "teacher-assistant-openclaw",
+                    "traces": {
+                        "enabled": true
+                    },
+                    "metrics": {
+                        "enabled": true
+                    },
+                    "captureSpans": [
+                        "agent.turn",
+                        "tool.execute",
+                        "model.completion"
+                    ]
+                }
+            }
+        }
+    }
+}
