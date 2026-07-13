@@ -1,0 +1,22 @@
+# Representative classroom_qa benchmark prompts (one per non-comment, non-empty line).
+# These exercise every branch of the classroom_qa skill against the bundled
+# 2026-06-15 sample session (summary.md, topics.json, engagement_report.json).
+# Lines starting with '#' and blank lines are ignored by run-benchmark.sh.
+
+# --- Summary path (reads summary.md) ---
+Summarize the lesson from June 15
+What happened in today's class?
+
+# --- Topics path (reads topics.json) ---
+What topics were covered on 2026-06-15?
+List the topics discussed with their timestamps for June 15
+
+# --- Engagement path (reads engagement_report.json) ---
+How engaged were the students on June 15?
+How many hand raises were there in the June 15 session?
+
+# --- Absentee catch-up path (reads summary.md + topics.json) ---
+My child was absent on June 15. What should they review to catch up?
+
+# --- Date with no session (tests the graceful "no session" path) ---
+Summarize the lesson from June 1
