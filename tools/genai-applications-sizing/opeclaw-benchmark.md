@@ -5,6 +5,7 @@ demo, **which KPIs** we collect, the **different ways** to collect them, and —
 importantly — **why not every KPI can be read from the debug JSONL logs**, with
 the root cause explained against the OpenClaw telemetry pipeline.
 
+---
 
 ## 1. What "OpenClaw benchmarking" means here
 
@@ -66,13 +67,12 @@ requires knowing how a diagnostic event flows once OpenClaw raises it.
 
 Every KPI-bearing event starts life the same way: OpenClaw calls
 `emitDiagnosticEvent(...)` on an **in-process diagnostic event bus**. From that
-bus the event **fans out to up to four independent sinks**, and *each sink keeps
+bus the event **fans out to up to three independent sinks**, and *each sink keeps
 a different subset of the data*:
 
 ```mermaid
 flowchart TD
     A[emitDiagnosticEvent<br/>in-process event bus] --> B[Human-readable text log<br/>diag.debug&#40;...&#41; -> logging.file JSONL]
-    A --> C[Diagnostic stability recorder<br/>bounded ring buffer, capacity 1000]
     A --> D[diagnostics-otel plugin]
     D --> E[OTEL Metrics<br/>counters / histograms]
     D --> F[OTEL Traces / Spans<br/>run, model.call, tool.execution]
@@ -93,21 +93,21 @@ The three signals of the `diagnostics-otel` plugin are **not equivalent**:
   model / tool events (source: `extensions/diagnostics-otel`,
   `service-attributes.ts` → `writeStdoutDiagnosticLogRecord()`).
 
-There are therefore **four practical telemetry surfaces**, summarized:
+There are therefore **three practical telemetry surfaces**, summarized:
 
 | Surface | Needs collector? | What it actually contains |
 | --- | --- | --- |
 | `logging.file` JSONL (debug) | No | Human-readable **text** debug lines + trace/span correlation ids — **not** typed KPI events |
 | `diagnostics-otel` stdout JSONL | No | Only `log.record` + `security.event` log records — **not** typed KPI events |
-| Gateway **stability snapshot** | No | Payload-free **typed** event records in a ring buffer (privacy-sanitized) |
 | OTLP **traces** (Jaeger) | Yes | Full **spans** with per-call timing + usage tags and parent/child hierarchy |
 
 ---
 
 ## 4. Options to collect the KPIs
 
-There are two viable, collector-free surfaces and one collector-based surface.
-This repo ships a benchmark script for the two most useful ones.
+There is one collector-free surface (limited) and one collector-based surface
+that yields the full KPI set. This repo ships a benchmark script for the
+trace-based path.
 
 ### Option A — Debug JSONL logs (`logging.file` + stdout JSONL)
 
@@ -135,32 +135,7 @@ Turn on the `diagnostics-otel` plugin in **stdout logs** mode and raise
   this path; it is retained for reference but does **not** yield the typed
   events the full KPI report needs.)
 
-### Option B — Gateway diagnostic **stability snapshot** (no collector) 
-
-The Gateway keeps a bounded, in-process **stability recorder** (ring buffer,
-capacity 1000, source `src/logging/diagnostic-stability.ts`) fed by every
-diagnostic event. It exposes the **typed** events over the local Gateway RPC —
-no OTLP collector, no container, near-zero CPU/memory.
-
-Script: [`benchmark/openclaw_agent_benchmark.py`](../benchmark/openclaw_agent_benchmark.py).
-It records the newest sequence number, drives the prompts through the
-`openclaw chat` TUI over a pty, then reads back only the new events with
-`openclaw gateway stability --json --since-seq <seq>` and computes all 7 KPIs.
-
-```bash
-python3 ./benchmark/openclaw_agent_benchmark.py prompts.txt
-python3 ./benchmark/openclaw_agent_benchmark.py prompts.txt --json > report.json
-```
-
-- **Pros:** no collector; delivers all 7 KPIs; low overhead; pure stdlib.
-- **Cons:** the recorder is **privacy-sanitized** — it drops `runId`,
-  `sessionKey`, `toolCallId`, and per-tool `agentId`. Runs are reconstructed
-  from the seq-ordered `run.started`/`run.completed` boundaries (exact here only
-  because the harness drives prompts **strictly sequentially**), and tool
-  start/end pairs are matched **FIFO** within a run. Ring buffer is bounded to
-  the last 1000 events.
-
-### Option C — OTLP **traces** via Jaeger (collector-based)
+### Option B — OTLP **traces** via Jaeger (collector-based) ✅ recommended
 
 Turn `traces:true`, point the plugin at a Jaeger all-in-one OTLP endpoint, and
 read KPIs from Jaeger's `/api/traces` JSON API.
@@ -240,28 +215,26 @@ or the payload sizes.
 
 ### What each surface can and cannot yield
 
-| KPI | `logging.file` (debug text) | `diagnostics-otel` stdout JSONL | Stability snapshot | OTLP traces |
-| --- | :---: | :---: | :---: | :---: |
-| 1. Request latency (`durationMs`) | ✗ (text only, no field) | ✗ (not a log.record) | ✓ | ✓ |
-| 2. Time to first response (`ttfb`) | ✗ (not logged at all) | ✗ | ✓ | ✓ |
-| 3. Planning duration | ✗ | ✗ | ✓ | ✓ |
-| 4. Aggregation duration | ✗ | ✗ | ✓ | ✓ |
-| 5. Per-agent time | partial (agentId in text) | ✗ | ✓ | ✓ (via hierarchy) |
-| 6. Per-tool exec time | ✗ | ✗ | ✓ | ✓ |
-| 7. Throughput / tokens | ✗ | ✗ | ✓ | ✓ |
-| trace/span correlation ids | ✓ | ✓ | — | ✓ |
+| KPI | `logging.file` (debug text) | `diagnostics-otel` stdout JSONL | OTLP traces |
+| --- | :---: | :---: | :---: |
+| 1. Request latency (`durationMs`) | ✗ (text only, no field) | ✗ (not a log.record) | ✓ |
+| 2. Time to first response (`ttfb`) | ✗ (not logged at all) | ✗ | ✓ |
+| 3. Planning duration | ✗ | ✗ | ✓ |
+| 4. Aggregation duration | ✗ | ✗ | ✓ |
+| 5. Per-agent time | partial (agentId in text) | ✗ | ✓ (via hierarchy) |
+| 6. Per-tool exec time | ✗ | ✗ | ✓ |
+| 7. Throughput / tokens | ✗ | ✗ | ✓ |
+| trace/span correlation ids | ✓ | ✓ | ✓ |
 
 **Bottom line:** the JSONL logs are a **log** signal. The KPI values live in the
-**metrics/spans** signal (traces) or in the **stability recorder** (typed
-events). That is why the low-overhead, collector-free benchmark reads the
-**stability snapshot** (Option B), and the trace-based benchmark reads **Jaeger
-spans** (Option C) — never the JSONL logs for the full KPI set.
+**metrics/spans** signal (traces). That is why the trace-based benchmark reads
+**Jaeger spans** (Option B) — never the JSONL logs for the full KPI set.
 
 ---
 
 ## 6. Collecting from traces — pros and cons
 
-Traces (Option C) are the richest surface. OpenClaw's `diagnostics-otel` plugin
+Traces (Option B) are the richest surface. OpenClaw's `diagnostics-otel` plugin
 exports these spans (default semantic conventions, verified in
 `extensions/diagnostics-otel`):
 
@@ -277,12 +250,11 @@ exports these spans (default semantic conventions, verified in
 ### Pros
 
 - **Complete KPI coverage.** Every KPI in §2 is derivable directly from span
-  durations and tags — nothing is dropped for privacy the way the stability
-  recorder drops it.
+  durations and tags.
 - **True causal hierarchy.** Spans carry `CHILD_OF` references, so model-call and
   tool spans can be regrouped under their parent run **structurally**, without
-  relying on sequential ordering. This is more robust for **concurrent /
-  multi-agent** workloads than the stability snapshot's seq-ordering assumption.
+  relying on sequential ordering. This is robust for **concurrent /
+  multi-agent** workloads.
 - **Rich tags** for provider, model, token usage, tool name, and (with
   latest-semconv opt-in) `gen_ai.operation.name` — good for slicing dashboards.
 - **Persisted & queryable.** Traces live in Jaeger/Tempo; you can query by time
@@ -308,9 +280,9 @@ exports these spans (default semantic conventions, verified in
   (`DROPPED_OTEL_ATTRIBUTE_KEYS`). Runs must be regrouped via the trace
   **hierarchy**, and per-agent attribution uses **time-window correlation** with
   the driver — not a stable agent id on the span.
-- **Higher overhead** than the stability snapshot: serialization, OTLP export,
-  and a running collector consume more CPU/memory/disk — less ideal when the
-  benchmark goal is to measure the app under **minimal observer effect**.
+- **Overhead.** Serialization, OTLP export, and a running collector consume
+  CPU/memory/disk — a consideration when the benchmark goal is to measure the
+  app under **minimal observer effect**.
 - **Clock/units care.** Jaeger works in **microseconds**; the query window and
   duration math must convert correctly (handled in the script).
 
@@ -318,8 +290,7 @@ exports these spans (default semantic conventions, verified in
 
 | Situation | Recommended surface |
 | --- | --- |
-| Local, low-overhead, no infra, sequential prompts | **Option B — stability snapshot** |
-| Full fidelity, concurrent/multi-agent, dashboards, history | **Option C — traces / Jaeger** |
+| Full fidelity, concurrent/multi-agent, dashboards, history | **Option B — traces / Jaeger** |
 | Quick model-call size/timing sanity check only | Option A — debug JSONL (limited) |
 | Full multi-agent/tool KPI set from JSONL logs alone | **Not possible** — see §5 |
 
@@ -363,16 +334,14 @@ exports these spans (default semantic conventions, verified in
   per-line `agentId ::` selector becomes **informational only** because a single
   chat session cannot switch agents mid-conversation.
 
-> **Note on the shipped scripts.** Both
-> [`benchmark/openclaw_agent_benchmark.py`](../benchmark/openclaw_agent_benchmark.py)
-> and
+> **Note on the shipped script.**
 > [`benchmark/openclaw_tui_jaeger_benchmark.py`](../benchmark/openclaw_tui_jaeger_benchmark.py)
-> currently **drive the interactive TUI over a pty** (pty fork + idle detection),
+> currently **drives the interactive TUI over a pty** (pty fork + idle detection),
 > because `openclaw chat` ignores a piped stdin and only submits a turn from a
 > real TTY. If you want strict per-request isolation and deterministic
 > boundaries instead, drive `openclaw agent --message <prompt>` per prompt (one
-> process per turn) and keep the same stability-snapshot / Jaeger KPI readers —
-> the KPI math is identical.
+> process per turn) and keep the same Jaeger KPI reader — the KPI math is
+> identical.
 
 **Rule of thumb:** headless `openclaw agent --message` = *cleaner numbers*;
 interactive `openclaw chat` (TUI) = *more realistic session*. Pick based on
@@ -385,7 +354,6 @@ whether you are benchmarking the **engine** (headless) or the **experience**
 
 - Diagnostic event shapes: [`src/infra/diagnostic-events.ts`](https://github.com/openclaw/openclaw/blob/main/src/infra/diagnostic-events.ts)
 - Human-readable diagnostic text logs: [`src/logging/diagnostic.ts`](https://github.com/openclaw/openclaw/blob/main/src/logging/diagnostic.ts)
-- Stability recorder (ring buffer): [`src/logging/diagnostic-stability.ts`](https://github.com/openclaw/openclaw/blob/main/src/logging/diagnostic-stability.ts)
 - OTEL plugin (metrics/traces/logs sinks, stdout writer, dropped keys): [`extensions/diagnostics-otel`](https://github.com/openclaw/openclaw/tree/main/extensions/diagnostics-otel)
 - OpenTelemetry export docs: [`docs/gateway/opentelemetry.md`](https://github.com/openclaw/openclaw/blob/main/docs/gateway/opentelemetry.md)
 - Logging (JSONL file logs): [`docs/logging.md`](https://github.com/openclaw/openclaw/blob/main/docs/logging.md)
@@ -393,8 +361,7 @@ whether you are benchmarking the **engine** (headless) or the **experience**
 ### Related files in this repo
 
 - Config (stdout JSONL logs): [`benchmark/openclaw-otel.json`](../benchmark/openclaw-otel.json)
-- Stability-snapshot benchmark (Option B): [`benchmark/openclaw_agent_benchmark.py`](../benchmark/openclaw_agent_benchmark.py)
-- Traces/Jaeger benchmark (Option C): [`benchmark/openclaw_tui_jaeger_benchmark.py`](../benchmark/openclaw_tui_jaeger_benchmark.py)
+- Traces/Jaeger benchmark (Option B): [`benchmark/openclaw_tui_jaeger_benchmark.py`](../benchmark/openclaw_tui_jaeger_benchmark.py)
 - Model-call-only JSONL parser: [`benchmark/parse_otel_benchmark.py`](../benchmark/parse_otel_benchmark.py)
 - Setup: [`docs/openclaw-setup.md`](./openclaw-setup.md)
 </content>
