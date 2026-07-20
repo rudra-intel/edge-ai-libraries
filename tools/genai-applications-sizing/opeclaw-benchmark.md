@@ -9,7 +9,7 @@ the root cause explained against the OpenClaw telemetry pipeline.
 
 ## 1. What "OpenClaw benchmarking" means here
 
-OpenClaw benchmarking = driving a **fixed, repeatable workload** (a set of
+Driving a **fixed, repeatable workload** (a set of
 teacher-assistant prompts) through the running OpenClaw agent and measuring the
 performance of each agent turn end-to-end: how long a request takes, how quickly
 the first token comes back, how long the model spends "planning" vs. calling
