@@ -5,17 +5,6 @@ demo, **which KPIs** we collect, the **different ways** to collect them, and —
 importantly — **why not every KPI can be read from the debug JSONL logs**, with
 the root cause explained against the OpenClaw telemetry pipeline.
 
-> **Environment note.** OpenClaw is **not installed** on this machine and the
-> OpenClaw **documentation site is restricted** here. Every OpenClaw-specific
-> claim below (event names, field names, which signal carries which value) is
-> derived from the **public OpenClaw GitHub repository**
-> [`openclaw/openclaw`](https://github.com/openclaw/openclaw) — primarily
-> `src/infra/diagnostic-events.ts`, `src/logging/diagnostic.ts`,
-> `src/logging/diagnostic-stability.ts`, and the `extensions/diagnostics-otel`
-> plugin. Where a fact drives a design decision it is called out inline with its
-> source file.
-
----
 
 ## 1. What "OpenClaw benchmarking" means here
 
