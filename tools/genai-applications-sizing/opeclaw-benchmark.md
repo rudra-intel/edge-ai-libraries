@@ -135,7 +135,7 @@ Turn on the `diagnostics-otel` plugin in **stdout logs** mode and raise
   this path; it is retained for reference but does **not** yield the typed
   events the full KPI report needs.)
 
-### Option B — Gateway diagnostic **stability snapshot** (no collector) ✅ recommended for local runs
+### Option B — Gateway diagnostic **stability snapshot** (no collector) 
 
 The Gateway keeps a bounded, in-process **stability recorder** (ring buffer,
 capacity 1000, source `src/logging/diagnostic-stability.ts`) fed by every
