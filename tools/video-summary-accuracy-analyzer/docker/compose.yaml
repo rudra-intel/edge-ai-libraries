@@ -10,12 +10,12 @@ services:
     volumes:
       - ../nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
-      - vss-acc-eval
-      - vss-acc-eval-ui
+      - video-accuracy-eval
+      - video-accuracy-eval-ui
 
-  vss-acc-eval:
-    image: vss-eval:latest
-    container_name: vss-acc-eval
+  video-accuracy-eval:
+    image: video-accuracy-eval:latest
+    container_name: video-accuracy-eval
     build:
       context: ../
       dockerfile: docker/Dockerfile
@@ -23,7 +23,9 @@ services:
       http_proxy: ${http_proxy}
       https_proxy: ${https_proxy}
       no_proxy: ${no_proxy}
+      HF_TOKEN: ${HUGGINGFACEHUB_API_TOKEN}
       SBERT_MODEL_ID: ${SBERT_MODEL_ID}
+      NLTK_ALLOW_PROXIED_URLOPEN: 1
     group_add:
       - ${USER_GROUP_ID-1000}
     ports:
@@ -31,21 +33,21 @@ services:
     volumes:
       - "${MODEL_CACHE_PATH}:/tmp/model_cache"
 
-  vss-acc-eval-ui:
-    image: vss-eval-ui:latest
-    container_name: vss-acc-eval-ui
+  video-accuracy-eval-ui:
+    image: video-accuracy-eval-ui:latest
+    container_name: video-accuracy-eval-ui
     build:
       context: ../ui/
       dockerfile: docker/Dockerfile
     environment:
       http_proxy: ${http_proxy}
       https_proxy: ${https_proxy}
-      no_proxy: ${no_proxy}, vss-acc-eval, vss-acc-eval-ui
+      no_proxy: ${no_proxy}, video-accuracy-eval, video-accuracy-eval-ui
       APP_BACKEND_URL: ${APP_BACKEND_URL}
     ports:
       - "5174:7860"
     depends_on:
-      - vss-acc-eval
+      - video-accuracy-eval
 
 networks:
   default:

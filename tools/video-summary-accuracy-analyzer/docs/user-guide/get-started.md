@@ -23,6 +23,7 @@ docker compose version
 Run the setup script from the project root:
 
 ```bash
+export HUGGINGFACEHUB_API_TOKEN=<your_huggingfacehub_token>
 source scripts/setup_env.sh
 ```
 

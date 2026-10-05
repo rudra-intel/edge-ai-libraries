@@ -9,13 +9,11 @@ authors = []
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = "^3.12"
 beautifulsoup4 = "4.15.0"
 bert-score = "^0.3.13"
-fastapi = "0.141.1"
+fastapi = { version = ">=0.138,<1", extras = ["standard"] }
 markdown = "3.10.2"
-# nltk 3.10.3 refuses proxied downloads of punkt_tab
-nltk = "3.10.2"
 python-multipart = ">=0.0.32"
 pydantic-settings = "2.15.0"
 rouge-score = "^0.1.2"

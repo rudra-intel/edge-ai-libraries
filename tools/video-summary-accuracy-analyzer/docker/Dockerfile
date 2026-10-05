@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-FROM python:3.11-slim AS python-base
+FROM python:3.12-slim AS python-base
 
 ARG GID=1000
 ARG UID=1000
@@ -28,7 +28,7 @@ ENV PYTHONUNBUFFERED=1 \
 ENV PATH="$POETRY_HOME/bin:$VENV_PATH/bin:$PATH"
 
 # Upgrade pip and setuptools to the latest version to fix vuln
-RUN /usr/local/bin/pip install --upgrade pip setuptools
+RUN /usr/local/bin/pip install --upgrade pip==26.1.2 setuptools
 
 # Create a non-root user
 RUN groupadd -g ${GID} appuser && \
