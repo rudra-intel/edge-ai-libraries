@@ -20,19 +20,19 @@ To build the Docker image for the evaluation service, follow these steps:
 2. Build the docker image using command:
 
    ```bash
-   docker build -t vss-eval:latest -f docker/Dockerfile .
+   docker build -t video-accuracy-eval:latest -f docker/Dockerfile .
    ```
 
 3. Verify that the Docker image has been built successfully:
 
    ```bash
-   docker images | grep vss-eval
+   docker images | grep video-accuracy-eval
    ```
 
-   You should see an entry for `vss-eval` with the `latest` tag.
+   You should see an entry for `video-accuracy-eval` with the `latest` tag.
 
 ## Building the UI image
-To build the Docker image for the `vss-eval-ui` service, follow these steps:
+To build the Docker image for the `video-accuracy-eval-ui` service, follow these steps:
 
 1. Ensure you in the `ui/` project directory:
 
@@ -43,13 +43,13 @@ To build the Docker image for the `vss-eval-ui` service, follow these steps:
 2. Build the Docker image using the provided `Dockerfile`:
 
    ```bash
-   docker build -t vss-eval-ui:latest -f docker/Dockerfile .
+   docker build -t video-accuracy-eval-ui:latest -f docker/Dockerfile .
    ```
 
 3. Verify that the Docker image has been built successfully:
 
    ```bash
-   docker images | grep vss-eval-ui
+   docker images | grep video-accuracy-eval-ui
    ```
 
 4. Once you have verified that the image has been built successfully, navigate back to the `video-accuracy-evaluation` directory:
@@ -83,10 +83,10 @@ This guide explains how to build the images using the compose.yaml file via the 
 4. Verify that the Docker images have been built successfully:
 
    ```bash
-   docker images | grep vss-eval
+   docker images | grep video-accuracy-eval
    ```
 
-   You should see entries for both `vss-eval` and `vss-eval-ui`.
+   You should see entries for both `video-accuracy-eval` and `video-accuracy-eval-ui`.
 
 ## Running the Application Container
 After building the images for the `Video Accuracy Evaluation` application, you can run the application container using `docker compose` by following these steps:

@@ -34,13 +34,13 @@ The script creates the model cache and exports the values required by Docker Com
 | `MODEL_CACHE_PATH` | `~/model_cache/sbert` | Persists downloaded evaluation models on the host. |
 | `SBERT_MODEL_ID` | `all-mpnet-base-v2` | Selects the Sentence-BERT model used for semantic similarity. |
 | `USER_GROUP_ID` | Current user's primary group ID | Grants the backend container access to the mounted model cache. |
-| `APP_BACKEND_URL` | `http://vss-acc-eval:9000/v1/eval` | Connects the dashboard to the backend service. |
+| `APP_BACKEND_URL` | `http://video-accuracy-eval:9000/v1/eval` | Connects the dashboard to the backend service. |
 
 The Compose configuration also forwards the host's `http_proxy`, `https_proxy`, and `no_proxy` values when they are set.
 
 ## Build the Application
 
-If the `vss-eval:latest` and `vss-eval-ui:latest` images have not already been built, follow [How to Build from Source](./build-from-source.md). The quickest option from the project root is:
+If the `video-accuracy-eval:latest` and `video-accuracy-eval-ui:latest` images have not already been built, follow [How to Build from Source](./build-from-source.md). The quickest option from the project root is:
 
 ```bash
 docker compose -f docker/compose.yaml build
@@ -147,7 +147,7 @@ View the service logs if a container is unhealthy or the dashboard is unavailabl
 docker compose -f docker/compose.yaml logs -f
 ```
 
-To inspect one service only, specify `nginx`, `vss-acc-eval`, or `vss-acc-eval-ui` after `logs -f`.
+To inspect one service only, specify `nginx`, `video-accuracy-eval`, or `video-accuracy-eval-ui` after `logs -f`.
 
 - If port `8101` is already in use, stop the conflicting process or change the host-side port in `docker/compose.yaml`.
 - If a model download fails, verify internet and proxy access, then restart the services.
