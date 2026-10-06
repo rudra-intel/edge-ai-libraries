@@ -38,7 +38,8 @@ app.add_middleware(
 evaluator = Evaluator(
     bert_scorer_model_name=config.BERT_SCORER_MODEL_ID,
     sbert_model_name=config.SBERT_MODEL_ID,
-    nli_model_name=config.NLI_MODEL_ID
+    nli_model_name=config.NLI_MODEL_ID,
+    nli_model_revision=config.NLI_MODEL_REVISION
 )
 
 
@@ -83,9 +84,10 @@ def get_semantic_score(input_data: EvaluateData):
         return evaluator._calculate_semantic_score(input_data.generated, input_data.reference)
 
     except Exception as e:
+        logger.exception("semantic-score evaluation failed")
         raise HTTPException(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Evaluation failed. Contact support if this persists."
         )
 
 
@@ -99,9 +101,10 @@ def get_bert_score(input_data: EvaluateData):
         return evaluator._calculate_bert_score(input_data.generated, input_data.reference)
 
     except Exception as e:
+        logger.exception("bert-score evaluation failed")
         raise HTTPException(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Evaluation failed. Contact support if this persists."
         )
 
 
@@ -115,9 +118,10 @@ def get_rouge_score(input_data: EvaluateData):
         return evaluator._calculate_rouge_score(input_data.generated, input_data.reference)
 
     except Exception as e:
+        logger.exception("rouge-score evaluation failed")
         raise HTTPException(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Evaluation failed. Contact support if this persists."
         )
 
 
@@ -131,9 +135,10 @@ def get_average_score(input_data: EvaluateData):
         return evaluator._calculate_average_scores([(input_data.generated, input_data.reference)])
 
     except Exception as e:
+        logger.exception("average-score evaluation failed")
         raise HTTPException(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Evaluation failed. Contact support if this persists."
         )
 
 
@@ -147,9 +152,10 @@ def get_factual_entailment(input_data: EvaluateData):
         return evaluator._evaluate_factual_consistency(input_data.generated, input_data.reference)
 
     except Exception as e:
+        logger.exception("factual-entailment evaluation failed")
         raise HTTPException(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Evaluation failed. Contact support if this persists."
         )
 
 
@@ -191,11 +197,14 @@ async def evaluate_video_accuracy(
         raise
 
     except Exception as e:
+        logger.exception("evaluate request failed")
         raise HTTPException(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Evaluation failed. Contact support if this persists."
         )
 
 
 if __name__ == "__main__":
-    uvicorn.run("app", host="0.0.0.0", port=9000)
+    # Only this direct-run path defaults to loopback; the Dockerfile's uvicorn CLI
+    # invocation controls the container's bind address independently via --host.
+    uvicorn.run("app", host=os.getenv("UVICORN_HOST", "127.0.0.1"), port=9000)

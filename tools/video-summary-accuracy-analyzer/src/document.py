@@ -5,6 +5,7 @@ from fastapi import UploadFile
 from pathlib import Path
 from typing import List, Optional
 from .config import config
+from .logger import logger
 import os
 
 
@@ -24,7 +25,9 @@ def validate_files(file_objects: List[UploadFile]) -> bool:
 async def save_files_to_tmp(file_objects: list[UploadFile]) -> List[str]:
     saved_files = []
     for file_obj in file_objects:
-        tmp_path = Path(config._TMP_FILE_PATH) / file_obj.filename
+        # Only the basename is trusted; this prevents path traversal via a crafted filename.
+        safe_name = os.path.basename(file_obj.filename)
+        tmp_path = Path(config._TMP_FILE_PATH) / safe_name
 
         if not tmp_path.parent.exists():
             tmp_path.parent.mkdir(parents=True, exist_ok=True)

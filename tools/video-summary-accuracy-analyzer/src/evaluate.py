@@ -24,7 +24,8 @@ class Evaluator:
         self,
         bert_scorer_model_name: str = None,
         sbert_model_name: str = None,
-        nli_model_name: str = None
+        nli_model_name: str = None,
+        nli_model_revision: str = None
     ):
         """
         Initialize the evaluator class.
@@ -33,6 +34,7 @@ class Evaluator:
             bert_scorer_model_name: BERT scorer model name
             sbert_model_name: Sentence transformer model name
             nli_model_name: Natural Language Inference model name
+            nli_model_revision: Pinned commit/revision for the NLI model
         """
 
         # Download necessary NLTK resources
@@ -51,11 +53,13 @@ class Evaluator:
         # Initialize the NLI model and tokenizer
         self.nli_tokenizer = AutoTokenizer.from_pretrained(
             nli_model_name,
+            revision=nli_model_revision,
             cache_dir=f"{config._CACHE_DIR}/{nli_model_name}"
         )
 
         self.nli_model = AutoModelForSequenceClassification.from_pretrained(
             nli_model_name,
+            revision=nli_model_revision,
             cache_dir=f"{config._CACHE_DIR}/{nli_model_name}"
         )
 
