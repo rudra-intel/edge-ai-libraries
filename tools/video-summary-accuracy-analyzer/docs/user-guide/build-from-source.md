@@ -2,6 +2,10 @@
 
 This guide provides step-by-step instructions for building the Video Accuracy Evaluation service from source.
 
+Both the backend and UI images pin pip to `26.2` in system Python and in the
+Poetry-created application virtual environment. Rebuild the images and recreate
+the application containers to apply this pin to an existing deployment.
+
 If you want to build the microservices image locally, you can optionally refer to the steps in the [Building the Backend Image](#building-the-backend-image) and [Building the UI Image](#building-the-ui-image) sections. These sections provide detailed instructions on how to build the Docker images for both the backend and UI components of the `Video Accuracy Evaluation` service separately.
 
 If you want to build the images via `docker compose`, please refer to the section [Build the Images via Docker Compose](#build-the-images-via-docker-compose).

@@ -48,6 +48,8 @@ COPY pyproject.toml poetry.lock ./
 RUN poetry install --no-dev && \
     rm -rf ~/.cache/pypoetry/* ~/.cache/pip/*
 
+RUN "$VENV_PATH/bin/python" -m pip install --no-cache-dir --upgrade pip==26.2
+
 
 # `dev` image is used during development / testing
 FROM python-base AS dev
