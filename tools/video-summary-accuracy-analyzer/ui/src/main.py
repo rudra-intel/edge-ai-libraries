@@ -96,8 +96,9 @@ def preview_uploaded_file(file):
             gr.update(value=reference_text, visible=True),
             gr.update(value=generated_text, visible=True),
         )
-    except Exception as e:
-        error_msg = f"Failed to read uploaded file: {str(e)}"
+    except Exception:
+        logger.exception("Failed to read uploaded file")
+        error_msg = "Failed to read the uploaded file. Please verify the file and try again."
         return (
             gr.update(value=error_msg, visible=True),
             gr.update(value=error_msg, visible=True),
@@ -236,8 +237,9 @@ def submit_file(file):
                 gr.update(value=empty_df, row_count=(0, "fixed")),
             )
 
-    except Exception as e:
-        error_df = pd.DataFrame([{"Error": str(e)}])
+    except Exception:
+        logger.exception("Evaluation request failed")
+        error_df = pd.DataFrame([{"Error": "Evaluation failed. Please try again or contact support if this persists."}])
         empty_df = pd.DataFrame()
         return (
             gr.update(value=error_df, row_count=(1, "fixed")),
@@ -270,8 +272,9 @@ def evaluate_metrics(reference, generated, metric):
 
             return formatted
 
-    except Exception as e:
-        return f"Request failed: {str(e)}"
+    except Exception:
+        logger.exception("Request to backend failed")
+        return "Request failed. Please try again or contact support if this persists."
 
 
 

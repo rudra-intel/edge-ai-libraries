@@ -29,7 +29,7 @@ services:
     group_add:
       - ${USER_GROUP_ID-1000}
     ports:
-      - "9000:9000"
+      - "127.0.0.1:9000:9000"
     volumes:
       - "${MODEL_CACHE_PATH}:/tmp/model_cache"
 
@@ -45,7 +45,7 @@ services:
       no_proxy: ${no_proxy}, video-accuracy-eval, video-accuracy-eval-ui
       APP_BACKEND_URL: ${APP_BACKEND_URL}
     ports:
-      - "5174:7860"
+      - "127.0.0.1:5174:7860"
     depends_on:
       - video-accuracy-eval
 

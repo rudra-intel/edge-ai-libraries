@@ -202,7 +202,7 @@ async def evaluate_video_accuracy(
     try:
         status = validate_files([file])
         if status is False:
-            logger.exception("Unsupported file format.")
+            logger.warning("Unsupported file format.")
             raise HTTPException(
                 status_code=HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
                 detail="Unsupported file format. Please upload a .md or .tsv file."
@@ -211,7 +211,7 @@ async def evaluate_video_accuracy(
         # Save the file in /tmp/documents to load it later
         tmp_files = await save_files_to_tmp([file])
         if tmp_files is None or len(tmp_files) == 0:
-            logger.exception(f"Error saving file.")
+            logger.error("Error saving file.")
             raise HTTPException(
                 status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
                 detail="Error saving file."
