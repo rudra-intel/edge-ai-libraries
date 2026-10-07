@@ -15,6 +15,9 @@ logger = logging.getLogger(__name__)
 
 APP_BACKEND_URL = os.getenv("APP_BACKEND_URL", "http://localhost:9000/v1/eval")
 
+# Bound outbound calls to the backend so a hung/slow backend cannot stall the UI indefinitely (SDL423/DoS).
+REQUEST_TIMEOUT = float(os.getenv("APP_REQUEST_TIMEOUT", "300"))
+
 # Define the sample markdown string
 SAMPLE_MARKDOWN = """
 **Instructions:** To use this application, please provide a markdown file with two sections titled 'Reference' and 'Generated', as shown in the example below.
@@ -112,7 +115,7 @@ def submit_file(file):
     eval_endpoint = f"{APP_BACKEND_URL}/evaluate"
     try:
         with open(file.name, "rb") as f:
-            response = requests.post(eval_endpoint, files={"file": (file.name, f, "multipart/form-data")})
+            response = requests.post(eval_endpoint, files={"file": (file.name, f, "multipart/form-data")}, timeout=REQUEST_TIMEOUT)
 
         if response.status_code == 200:
             data = response.json()
@@ -257,7 +260,7 @@ def evaluate_metrics(reference, generated, metric):
     }
 
     try:
-        response = requests.post(metric_endpoint, json=payload)
+        response = requests.post(metric_endpoint, json=payload, timeout=REQUEST_TIMEOUT)
 
         if response.status_code == 200:
             result = response.json()
@@ -375,8 +378,10 @@ if __name__ == "__main__":
     demo = create_ui()
     logger.info(f"Starting Gradio UI...")
     demo.launch(
-        server_name="0.0.0.0",
-        server_port=7860,
+        # Bind address is configurable; defaults to all interfaces because the UI runs inside a
+        # container published behind the NGINX gateway. Override APP_UI_HOST to restrict.
+        server_name=os.getenv("APP_UI_HOST", "0.0.0.0"),  # nosec B104 - containerized service behind gateway
+        server_port=int(os.getenv("APP_UI_PORT", "7860")),
         share=False,
         inbrowser=False,
         show_error=True

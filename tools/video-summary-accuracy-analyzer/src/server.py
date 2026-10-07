@@ -4,10 +4,11 @@
 import os
 import uvicorn
 from http import HTTPStatus
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.openapi.docs import get_swagger_ui_html
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List, Annotated
 from .config import config
 from .document import validate_files, save_files_to_tmp
@@ -26,12 +27,21 @@ app = FastAPI(
     redoc_url=None,
 )
 
-# Add CORS middleware
+# Add CORS middleware.
+# Default to no cross-origin access; operators must opt in with an explicit origin allowlist.
+# A wildcard origin ("*") is only honored when credentials are disabled, since browsers forbid
+# (and it is unsafe to serve) "*" together with Access-Control-Allow-Credentials: true.
+_cors_origins = [o for o in os.getenv("CORS_ALLOW_ORIGINS", "").split(",") if o]
+_cors_allow_credentials = os.getenv("CORS_ALLOW_CREDENTIALS", "false").lower() == "true"
+if _cors_origins == ["*"] and _cors_allow_credentials:
+    logger.warning("Refusing wildcard CORS origin with credentials enabled; disabling credentials.")
+    _cors_allow_credentials = False
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ALLOW_ORIGINS", "*").split(","),  # Adjust this to your needs
-    allow_credentials=True,
-    allow_methods=os.getenv("CORS_ALLOW_METHODS", "*").split(","),
+    allow_origins=_cors_origins,
+    allow_credentials=_cors_allow_credentials,
+    allow_methods=os.getenv("CORS_ALLOW_METHODS", "GET,POST").split(","),
     allow_headers=os.getenv("CORS_ALLOW_HEADERS", "*").split(","),
 )
 
@@ -43,6 +53,25 @@ evaluator = Evaluator(
 )
 
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    # SDL423: log full detail server-side, never leak internals to the caller.
+    logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+        content={"detail": "An internal error occurred. Please try again."},
+    )
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    # Preserve explicit 4xx client-error messages; mask any 5xx detail.
+    if exc.status_code >= HTTPStatus.INTERNAL_SERVER_ERROR:
+        logger.error("HTTP %s on %s: %s", exc.status_code, request.url.path, exc.detail)
+        return JSONResponse(status_code=exc.status_code, content={"detail": "Server error"})
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+
 @app.get("/docs", include_in_schema=False)
 async def swagger_ui():
     return get_swagger_ui_html(
@@ -51,10 +80,10 @@ async def swagger_ui():
     )
 
 class EvaluateData(BaseModel):
-    generated: str
-    reference: str
-    question: str = ""
-    metrics: Optional[List[str]] = None
+    generated: str = Field(..., max_length=100_000)
+    reference: str = Field(..., max_length=100_000)
+    question: str = Field("", max_length=10_000)
+    metrics: Optional[List[str]] = Field(None, max_length=32)
 
 @app.get(
     "/health",

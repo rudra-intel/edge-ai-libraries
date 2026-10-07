@@ -23,7 +23,8 @@ else
 fi
 
 
-export USER_GROUP_ID=$(id -g ${USER})
+USER_GROUP_ID="$(id -g "${USER}")"
+export USER_GROUP_ID
 export SBERT_MODEL_ID="all-mpnet-base-v2"
 export MODEL_CACHE_PATH="$MODEL_CACHE_PATH"
 export APP_BACKEND_URL="http://video-accuracy-eval:9000/v1/eval"
