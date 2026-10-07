@@ -80,8 +80,8 @@ async def swagger_ui():
     )
 
 class EvaluateData(BaseModel):
-    generated: str = Field(..., max_length=100_000)
-    reference: str = Field(..., max_length=100_000)
+    generated: str = Field(..., min_length=1, max_length=100_000)
+    reference: str = Field(..., min_length=1, max_length=100_000)
     question: str = Field("", max_length=10_000)
     metrics: Optional[List[str]] = Field(None, max_length=32)
 

@@ -165,7 +165,7 @@ class Evaluator:
         rouge1_p, rouge1_r, rouge1_f = [], [], []
         rouge2_p, rouge2_r, rouge2_f = [], [], []
         rougel_p, rougel_r, rougel_f = [], [], []
-        semantic_p, semantic_r, semantic_f, semantic_s = [], [], [], []
+        semantic_s = []
 
         for generated, reference in pairs:
             rouge_scores = self._calculate_rouge_score(generated, reference)
@@ -183,10 +183,7 @@ class Evaluator:
             rougel_r.append(rouge_scores["rougeL"]["recall"])
             rougel_f.append(rouge_scores["rougeL"]["f1_score"])
 
-            semantic_p.append(semantic_scores["precision"])
-            semantic_r.append(semantic_scores["recall"])
-            semantic_f.append(semantic_scores["f1_score"])
-            semantic_s.append(semantic_scores["similarity"])
+            semantic_s.append(semantic_scores["semantic_similarity_score"])
 
         # return average dictionary
         return {
@@ -206,10 +203,7 @@ class Evaluator:
                 "f1_score": round(np.mean(rougel_f), 4),
             },
             "semantic": {
-                "precision": round(np.mean(semantic_p), 4),
-                "recall": round(np.mean(semantic_r), 4),
-                "f1_score": round(np.mean(semantic_f), 4),
-                "similarity": round(np.mean(semantic_s), 4),
+                "semantic_similarity_score": round(np.mean(semantic_s), 4),
             }
         }
 
