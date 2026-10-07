@@ -28,7 +28,7 @@ ENV PYTHONUNBUFFERED=1 \
 ENV PATH="$POETRY_HOME/bin:$VENV_PATH/bin:$PATH"
 
 # Upgrade pip and setuptools to the latest version to fix vuln
-RUN /usr/local/bin/pip install --upgrade pip==26.1.2 setuptools
+RUN /usr/local/bin/pip install --upgrade pip==26.2.0 setuptools
 
 # Create a non-root user
 RUN groupadd -g ${GID} appuser && \
