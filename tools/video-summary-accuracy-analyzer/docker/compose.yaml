@@ -22,7 +22,7 @@ services:
     environment:
       http_proxy: ${http_proxy}
       https_proxy: ${https_proxy}
-      no_proxy: ${no_proxy}
+      no_proxy: localhost,127.0.0.1,${no_proxy}
       HF_TOKEN: ${HUGGINGFACEHUB_API_TOKEN}
       SBERT_MODEL_ID: ${SBERT_MODEL_ID}
       NLTK_ALLOW_PROXIED_URLOPEN: 1
@@ -42,7 +42,7 @@ services:
     environment:
       http_proxy: ${http_proxy}
       https_proxy: ${https_proxy}
-      no_proxy: ${no_proxy}, video-accuracy-eval, video-accuracy-eval-ui
+      no_proxy: localhost,127.0.0.1,${no_proxy}, video-accuracy-eval, video-accuracy-eval-ui
       APP_BACKEND_URL: ${APP_BACKEND_URL}
     ports:
       - "127.0.0.1:5174:7860"
