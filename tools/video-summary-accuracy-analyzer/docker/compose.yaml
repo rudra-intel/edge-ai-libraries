@@ -14,7 +14,7 @@ services:
       - video-accuracy-eval-ui
 
   video-accuracy-eval:
-    image: video-accuracy-eval:latest
+    image: ${REGISTRY:-intel/}video-accuracy-eval:${TAG:-latest}
     container_name: video-accuracy-eval
     build:
       context: ../
@@ -34,7 +34,7 @@ services:
       - "${MODEL_CACHE_PATH}:/tmp/model_cache"
 
   video-accuracy-eval-ui:
-    image: video-accuracy-eval-ui:latest
+    image: ${REGISTRY:-intel/}video-accuracy-eval-ui:${TAG:-latest}
     container_name: video-accuracy-eval-ui
     build:
       context: ../ui/

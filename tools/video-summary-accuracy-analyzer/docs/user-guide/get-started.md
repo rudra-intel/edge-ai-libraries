@@ -9,7 +9,7 @@ Before you begin, confirm the following:
 - A Linux system with enough disk space for the container images and downloaded evaluation models.
 - [Docker Engine](https://docs.docker.com/engine/install/) installed and running.
 - [Docker Compose](https://docs.docker.com/compose/install/) plugin installed.
-- Git and internet access to build the images and download the models on the first run.
+- Git and internet access to pull the images and download the models on the first run.
 
 Verify the Docker installation before continuing:
 
@@ -35,16 +35,27 @@ The script creates the model cache and exports the values required by Docker Com
 | `SBERT_MODEL_ID` | `all-mpnet-base-v2` | Selects the Sentence-BERT model used for semantic similarity. |
 | `USER_GROUP_ID` | Current user's primary group ID | Grants the backend container access to the mounted model cache. |
 | `APP_BACKEND_URL` | `http://video-accuracy-eval:9000/v1/eval` | Connects the dashboard to the backend service. |
+| `REGISTRY` | `intel/` | Docker Hub namespace used to pull the prebuilt images. |
+| `TAG` | `latest` | Image tag used to pull the prebuilt images. |
 
 The Compose configuration also forwards the host's `http_proxy`, `https_proxy`, and `no_proxy` values when they are set.
 
-## Build the Application
-
-If the `video-accuracy-eval:latest` and `video-accuracy-eval-ui:latest` images have not already been built, follow [How to Build from Source](./build-from-source.md). The quickest option from the project root is:
+To use a different registry or image tag, override the defaults before starting the services:
 
 ```bash
-docker compose -f docker/compose.yaml build
+export REGISTRY="intel/"
+export TAG=latest
 ```
+
+## Pull the Application Images
+
+The prebuilt `video-accuracy-eval` and `video-accuracy-eval-ui` images are published on Docker Hub under the `intel/` namespace. Pull them from the project root:
+
+```bash
+docker compose -f docker/compose.yaml pull
+```
+
+If you prefer to build the images locally instead of pulling them, follow [How to Build from Source](./build-from-source.md).
 
 ## Run the Application with Docker Compose
 
@@ -56,11 +67,7 @@ Run the following commands from the project root:
 	docker compose -f docker/compose.yaml up -d
 	```
 
-	Add `--build` to rebuild the images before starting the services:
-
-	```bash
-	docker compose -f docker/compose.yaml up -d --build
-	```
+	Compose pulls any missing images from Docker Hub before starting the services.
 
 2. Confirm that the services are running:
 

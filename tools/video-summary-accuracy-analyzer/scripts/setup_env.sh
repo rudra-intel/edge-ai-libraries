@@ -28,3 +28,7 @@ export USER_GROUP_ID
 export SBERT_MODEL_ID="all-mpnet-base-v2"
 export MODEL_CACHE_PATH="$MODEL_CACHE_PATH"
 export APP_BACKEND_URL="http://video-accuracy-eval:9000/v1/eval"
+
+# Container image coordinates. Override REGISTRY/TAG to pull different images.
+export REGISTRY="${REGISTRY:-intel/}"
+export TAG="${TAG:-latest}"

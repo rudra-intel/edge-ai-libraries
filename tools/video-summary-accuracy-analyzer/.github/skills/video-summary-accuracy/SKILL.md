@@ -95,7 +95,7 @@ A healthy service returns a JSON object with `"status": "Success"`.
   their OK) run the documented startup from the project root in the same shell:
   ```bash
   source scripts/setup_env.sh
-  docker compose -f docker/compose.yaml up -d --build
+  docker compose -f docker/compose.yaml up -d
   ```
   Re-check `/api/health` afterward — a running container doesn't mean the models
   finished loading. First-time model downloads can take a while. If startup

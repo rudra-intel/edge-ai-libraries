@@ -12,19 +12,30 @@ If you want to build the images via `docker compose`, please refer to the sectio
 
 Once all the images are built, you can proceed to start the service using the `docker compose` command as described in the [Get Started](./get-started.md) page.
 
+## Set the Image Coordinates
+
+The `compose.yaml` file names the images as `${REGISTRY:-intel/}video-accuracy-eval:${TAG:-latest}` and `${REGISTRY:-intel/}video-accuracy-eval-ui:${TAG:-latest}`. Export `REGISTRY` and `TAG` so that the images you build, pull, and run share the same coordinates:
+
+```bash
+export REGISTRY="intel/"
+export TAG=latest
+```
+
+The `scripts/setup_env.sh` script also sets these defaults when they are not already defined.
+
 ## Building the Backend Image
 To build the Docker image for the evaluation service, follow these steps:
 
 1. Ensure you are in the project directory:
 
    ```bash
-   cd microservices/video-accuracy-evaluation
+   cd tools/video-summary-accuracy-analyzer
    ``` 
 
 2. Build the docker image using command:
 
    ```bash
-   docker build -t video-accuracy-eval:latest -f docker/Dockerfile .
+   docker build -t "${REGISTRY:-intel/}video-accuracy-eval:${TAG:-latest}" -f docker/Dockerfile .
    ```
 
 3. Verify that the Docker image has been built successfully:
@@ -41,13 +52,13 @@ To build the Docker image for the `video-accuracy-eval-ui` service, follow these
 1. Ensure you in the `ui/` project directory:
 
    ```bash
-   cd microservices/video-accuracy-evaluation/ui
+   cd tools/video-summary-accuracy-analyzer/ui
    ```
 
 2. Build the Docker image using the provided `Dockerfile`:
 
    ```bash
-   docker build -t video-accuracy-eval-ui:latest -f docker/Dockerfile .
+   docker build -t "${REGISTRY:-intel/}video-accuracy-eval-ui:${TAG:-latest}" -f docker/Dockerfile .
    ```
 
 3. Verify that the Docker image has been built successfully:
@@ -56,7 +67,7 @@ To build the Docker image for the `video-accuracy-eval-ui` service, follow these
    docker images | grep video-accuracy-eval-ui
    ```
 
-4. Once you have verified that the image has been built successfully, navigate back to the `video-accuracy-evaluation` directory:
+4. Once you have verified that the image has been built successfully, navigate back to the `video-summary-accuracy-analyzer` directory:
 
    ```bash
    cd ..
@@ -68,7 +79,7 @@ This guide explains how to build the images using the compose.yaml file via the 
 1. Ensure you are in the project directory:
 
    ```bash
-   cd microservices/video-accuracy-evaluation
+   cd tools/video-summary-accuracy-analyzer
    ```
 
 2. Set Up Environment Variables:

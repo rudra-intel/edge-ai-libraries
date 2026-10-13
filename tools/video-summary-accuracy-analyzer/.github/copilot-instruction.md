@@ -31,7 +31,7 @@ sourcing `scripts/setup_env.sh` before launching containers.
 
 Launch/stop:
 
-- Start: `docker compose -f docker/compose.yaml up -d --build`
+- Start: `docker compose -f docker/compose.yaml up -d`
 - Stop: `docker compose -f docker/compose.yaml down`
 
 First-time startup downloads models into `MODEL_CACHE_PATH`; a running
@@ -96,7 +96,7 @@ All external traffic should target nginx at `http://<HOST_IP>:8101`.
 ## Recommended Validation Flow
 
 1. Configure runtime via `source scripts/setup_env.sh`.
-2. Start stack: `docker compose -f docker/compose.yaml up -d --build`.
+2. Start stack: `docker compose -f docker/compose.yaml up -d`.
 3. Health probe: `GET http://<HOST_IP>:8101/api/health` returns
 	`"status": "Success"`.
 4. Verify dashboard: `http://<HOST_IP>:8101/`.
