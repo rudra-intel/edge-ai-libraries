@@ -47,16 +47,6 @@ export REGISTRY="intel/"
 export TAG=latest
 ```
 
-## Pull the Application Images
-
-The prebuilt `video-accuracy-eval` and `video-accuracy-eval-ui` images are published on Docker Hub under the `intel/` namespace. Pull them from the project root:
-
-```bash
-docker compose -f docker/compose.yaml pull
-```
-
-If you prefer to build the images locally instead of pulling them, follow [How to Build from Source](./build-from-source.md).
-
 ## Run the Application with Docker Compose
 
 Run the following commands from the project root:
@@ -76,6 +66,8 @@ Run the following commands from the project root:
 	```
 
 	On the first run, startup can take several minutes while the evaluation models are downloaded to the model cache.
+
+If you prefer to build the images locally instead of pulling them, follow [How to Build from Source](./build-from-source.md).
 
 ## Access and Use the Application
 

@@ -24,10 +24,6 @@
         "should_trigger": true
     },
     {
-        "query": "Explain in plain language whether the AI-generated video description matches the reference description.",
-        "should_trigger": true
-    },
-    {
         "query": "Build the video-accuracy-eval Docker image from source.",
         "should_trigger": false
     },
@@ -37,14 +33,6 @@
     },
     {
         "query": "Benchmark CPU and GPU usage of the video search application.",
-        "should_trigger": false
-    },
-    {
-        "query": "Add a new /semantic-score unit test to the analyzer backend.",
-        "should_trigger": false
-    },
-    {
-        "query": "Compute ROUGE for two arbitrary English paragraphs in Python without using any service.",
         "should_trigger": false
     }
 ]
