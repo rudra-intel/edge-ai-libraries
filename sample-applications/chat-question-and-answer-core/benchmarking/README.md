@@ -35,7 +35,7 @@ consistent inputs.
 This tool's primary KPIs describe the **application/API request**, not an
 isolated language model:
 
-| This benchmark collects | What it tells you |
+| Benchmark collects | What It Means |
 |---|---|
 | End-to-end request latency | Time from immediately before the HTTP request is dispatched until the response body is processed and validated by this client |
 | First-visible-text latency | For streaming chat only, time to the first non-whitespace answer text observed by this client |
