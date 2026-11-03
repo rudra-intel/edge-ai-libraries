@@ -46,7 +46,7 @@ The script creates the model cache and exports the values required by Docker Com
 | `MODEL_CACHE_PATH` | `~/model_cache/sbert` | Persists downloaded evaluation models on the host. |
 | `SBERT_MODEL_ID` | `all-mpnet-base-v2` | Selects the Sentence-BERT model used for semantic similarity. |
 | `USER_GROUP_ID` | Current user's primary group ID | Grants the backend container access to the mounted model cache. |
-| `APP_BACKEND_URL` | `http://video-accuracy-eval:9000/v1/eval` | Connects the dashboard to the backend service. |
+| `APP_BACKEND_URL` | `http://video-summary-accuracy-analyzer:9000/v1/eval` | Connects the dashboard to the backend service. |
 | `REGISTRY` | `intel/` | Docker Hub namespace used to pull the prebuilt images. |
 | `TAG` | `latest` | Image tag used to pull the prebuilt images. |
 
