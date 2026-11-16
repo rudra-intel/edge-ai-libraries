@@ -347,3 +347,49 @@ profiles:
               }'
     chat_payloads:
       - chat: '{ "input": "Identify any potential risks or anomalies in the scene." }'
+
+  # Real-Time Scene Understanding: streams are created through POST /api/streams.
+  # Use an RTSP source that loops a video containing the target event, or no deep analysis runs.
+  # For sources with credentials, replace 'url' with 'url_env: <ENV_VAR_NAME>' holding the URL.
+
+  rtsu_realtime:
+    input_type: "rtsp stream"
+    input_size: "single stream"
+    streams:
+      - stream_id: "cam1"
+        url: "<url>"
+        alert_prompt: "Task: Describe only what is clearly visible in this ATM surveillance frame in 1 short sentence using only visible facts.
+                    Check for scene hazards first. If clearly visible smoke or fire is present near the ATM, say smoke is visible even if no flames are visible. 
+                    First decide whether any person is actually visible. If no person is clearly visible, say 'No person is visible near the ATM' and mention only any obvious ATM condition or safety cue. 
+                    Count a person only when a face or a substantial human body region is clearly visible; do not infer a person from shadows, reflections, silhouettes, cropped edges, heavy occlusion, clothing-like shapes, or background objects. 
+                    If people are clearly visible, include the number of visible people, whether someone is at or near the ATM, and the main visible action or interaction happening now. 
+                    Be especially alert for a clearly visible firearm or a clearly visible cash snatching motion, such as cash being grabbed, pulled away, or taken from a person or the ATM, and mention it explicitly when visible. 
+                    Mention object details only if they are directly relevant to the event or a security cue, such as a clearly visible gun, smoke, fire, struggle, forced withdrawal, cash snatching, standing close behind another person, lookout behavior, face concealment, tampering, tool use, or an opened panel, and only when clearly visible. Say 'gun' when an object is clearly visible as a firearm, including when it is visible in a hand or pointed at someone; otherwise do not mention a gun. 
+                    Do not describe clothing, colors, bags, or object appearance unless they change the event meaning. If no clear threat is visible, say the scene appears routine. 
+                    Do not guess intent, identity, hidden people, or anything outside the image.
+                    Then, determine whether is there any immediate threats or hazards visible in the image. "
+        deep_analyzer_prompt: "Analyze the chronological video clip from ATM surveillance. Write an event-focused factual summary/description using only directly visible evidence from the frames.
+                    Describe the person, action, interaction, identity, cause, or sequence only when it is clearly visible.
+                    Do not infer intent, hidden actions, actions between frames, or details that are merely plausible. Do not substitute a related or different event.
+                    Explain the visible evidence including relevant subjects, actions, location, and visible effects. Write for an end user; do not mention frame numbers, timestamps, sampling, or other technical video details. 
+                    Write 4 to 6 sentences in a natural, factual style."
+      
+      
+  rtsu_wsf:
+    input_type: "rtsp stream"
+    input_size: "single stream"
+    streams:
+      - stream_id: "cam1"
+        url: "<url>"
+        alert_prompt: "Describe this frame in 1 short sentence using only visible facts. Determine whether 'fall' is visible in this image, using only visual evidence from this image."
+        deep_analyzer_prompt: "Summarize what is visibly happening across the frames in chronological order, focusing on key evidence and scene changes. Then decide whether the context event is clearly visible in the frames and set confirmed accordingly. Use only visible evidence. Do not infer intent, identity, or facts outside the frames."
+
+ 
+  rtsu_warmup_profile:
+    input_type: "rtsp stream"
+    input_size: "single stream"
+    streams:
+      - stream_id: "warmup"
+        url: "<URL>"
+        alert_prompt: "Describe this frame in 1 short sentence using only visible facts. Determine whether 'fall' is visible in this image, using only visual evidence from this image."
+        deep_analyzer_prompt: "Summarize what is visibly happening across the frames in chronological order, focusing on key evidence and scene changes. Then decide whether the context event is clearly visible in the frames and set confirmed accordingly. Use only visible evidence. Do not infer intent, identity, or facts outside the frames."

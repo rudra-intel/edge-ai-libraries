@@ -15,6 +15,7 @@ from src.chat_question_and_answer import chatqna_performance
 from src.chat_question_and_answer_core import chatqna_core_performance
 from src.video_search_and_summarization import vss_performance
 from src.live_video_caption import lvc_performance
+from src.real_time_scene_understanding import rtsu_performance
 
 
 def validate_integer(value, name, min_value=0):
@@ -101,6 +102,7 @@ def main():
         - chatqna_core: ChatQnA core application profiling
         - video_summary_search: Video summary and search profiling
         - live_caption: Live video captioning profiling
+        - scene_understanding: Real-Time Scene Understanding profiling
     
     Raises:
         SystemExit: If input validation fails or required arguments are missing.
@@ -114,6 +116,7 @@ def main():
     Examples:
     python profile-runner.py --app=chatqna --input=profiles/chatqna-config.yaml --users=1 --request_count=10 --host_ip=<IP_ADDRESS_OF_APP_DEPLOYED> --collect_resource_metrics=yes
     python profile-runner.py --app=video_summary_search --input=profiles/video-search-config.yaml --host_ip=<IP_ADDRESS_OF_APP_DEPLOYED> --collect_resource_metrics=yes
+    python profile-runner.py --app=scene_understanding --input=profiles/real-time-scene-understanding-config.yaml --host_ip=<IP_ADDRESS_OF_APP_DEPLOYED> --warmup_time=60
             """
     )
     
@@ -121,14 +124,14 @@ def main():
     parser.add_argument("--users", default=1, type=int, 
                         help="Under implementation, this is set to 1 as the tool focuses on single user performance profiling")
     parser.add_argument("--request_count", default=1, type=int, 
-                        help="Total number of requests to execute (default: 1) and not applicable for live_caption")
+                        help="Total number of requests to execute (default: 1) and not applicable for live_caption and scene_understanding")
     parser.add_argument("--spawn_rate", default=1, type=int, 
                         help="Rate at which users are spawned per second (default: 1)")
     parser.add_argument("--input", default="config.yaml", type=str, 
                         help="Path to configuration YAML file (default: config.yaml)")
     parser.add_argument("--app", type=str, required=True,
-                        choices=["chatqna", "chatqna_core", "video_summary_search", "live_caption"], 
-                        help="Application to profile: chatqna (modular), chatqna_core, video_summary_search, live_caption")
+                        choices=["chatqna", "chatqna_core", "video_summary_search", "live_caption", "scene_understanding"], 
+                        help="Application to profile: chatqna (modular), chatqna_core, video_summary_search, live_caption, scene_understanding")
     parser.add_argument("--host_ip", type=str, required=True,
                         help="IP address of the machine where the application is deployed")
     parser.add_argument("--collect_resource_metrics", default="no", type=str, 
@@ -156,6 +159,8 @@ def main():
         vss_performance.vss_performance(users=1, request_count=args.request_count, ip=args.host_ip, input_file=args.input, collect_resource_metrics=collect_resource_metrics, warmup_time=args.warmup_time)
     elif args.app == "live_caption":
         lvc_performance.lvc_performance(users=1, request_count=args.request_count, ip=args.host_ip, input_file=args.input, collect_resource_metrics=collect_resource_metrics, warmup_time=args.warmup_time)
+    elif args.app == "scene_understanding":
+        rtsu_performance.rtsu_performance(users=1, request_count=args.request_count, ip=args.host_ip, input_file=args.input, collect_resource_metrics=collect_resource_metrics, warmup_time=args.warmup_time)
 
 if __name__ == "__main__":
     main()

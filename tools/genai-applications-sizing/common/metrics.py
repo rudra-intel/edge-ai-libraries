@@ -10,7 +10,9 @@ writing metrics to CSV and JSON files, and generating reports.
 
 import csv
 import json
+import math
 import os
+import re
 import numpy as np
 
 
@@ -795,3 +797,598 @@ def save_lvc_rag_metrics_to_wsf_format(report_dir, summary_file, live_caption_du
             writer.writerow([])
         
     print(f"WSF formatted live caption RAG metrics written to: {output_file}")
+
+
+# ==============================================================================
+# Real-Time Scene Understanding Metrics
+# ==============================================================================
+
+RTSU_GENAI_KPIS = ["TTFT (ms)", "TPOT (ms)", "Throughput (tok/s)"]
+RTSU_ALERT_CHECK_KPIS = RTSU_GENAI_KPIS + ["Latency (ms)", "Cycle Interval (ms)"]
+RTSU_DEEP_ANALYSIS_KPIS = RTSU_GENAI_KPIS + [
+    "Output Tokens", "Generation Latency (ms)", "E2E Latency (ms)",
+    "Trigger Latency (ms)", "Wait (ms)", "Publish Lag (ms)",
+]
+RTSU_STARTUP_KPIS = ["Time to Publishing (ms)", "Time to First Caption (ms)", "Time to First Deep Analysis (ms)"]
+
+RTSU_ALERT_CHECK_COLUMNS = [
+    "Stream ID", "Sample", "Caption TS", "Playback (s)", "Decision",
+    *RTSU_ALERT_CHECK_KPIS, "Possibly Stale", "Caption",
+]
+RTSU_DEEP_ANALYSIS_COLUMNS = [
+    "Stream ID", "Frame ID", "Segment", "Confirmed", "Frames Sampled", *RTSU_DEEP_ANALYSIS_KPIS,
+    "Trigger Match", "Registry Status", "Frame Created TS", "Trigger Caption TS",
+    "Trigger Playback (s)", "Uploaded TS", "First Seen TS",
+]
+RTSU_STARTUP_COLUMNS = ["Stream ID", *RTSU_STARTUP_KPIS]
+RTSU_STAT_KEYS = ("min", "max", "mean", "p90")
+
+# RTSU hands frames to the alert VLM at least ALERT_VLM_INTERVAL (default 2 s) apart.
+RTSU_TRIGGER_MATCH_TOLERANCE_S = 1.0
+_RTSU_DECISION_RE = re.compile(r"\bdecision\s*:\s*(yes|no)\b", re.IGNORECASE)
+
+
+def calculate_summary_stats(values):
+    """Return min, max, mean and p90 for non-null values (linear percentile)."""
+    data = [float(v) for v in values if v is not None]
+    if not data:
+        return {"min": None, "max": None, "mean": None, "p90": None}
+    arr = np.asarray(data)
+    return {
+        "min": round(float(arr.min()), 2),
+        "max": round(float(arr.max()), 2),
+        "mean": round(float(arr.mean()), 2),
+        "p90": round(float(np.percentile(arr, 90)), 2),
+    }
+
+
+def _rtsu_number(value):
+    """Return a finite float, or None for missing, boolean, or non-numeric values."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    value = float(value)
+    return value if math.isfinite(value) else None
+
+
+def _rtsu_round(value, digits=2):
+    return None if value is None else round(value, digits)
+
+
+def _rtsu_ms(start, end):
+    """Milliseconds from ``start`` to ``end`` (epoch seconds), or None if either is missing."""
+    if start is None or end is None:
+        return None
+    return round((end - start) * 1000, 2)
+
+
+def parse_rtsu_decision(caption):
+    """Parse the ``Decision: Yes/No`` line of an RTSU alert caption into True, False, or None."""
+    match = _RTSU_DECISION_RE.search(caption if isinstance(caption, str) else "")
+    return None if match is None else match.group(1).lower() == "yes"
+
+
+def extract_rtsu_alert_check_samples(tracker, stream_entry, poll_time):
+    """
+    Turn one ``GET /api/streams`` entry into new alert-check samples.
+
+    A sample is recorded when ``caption_ts`` changes. ``caption_history`` entries (newest
+    first) that appeared since the previous poll but are not the newest are recorded as
+    ``missed``: they have text and ``playback_seconds`` but no TTFT or TPOT. The newest
+    sample is flagged ``possibly_stale`` when TTFT, TPOT, and throughput equal the previous
+    sample, because the server keeps the last non-null values.
+
+    Args:
+        tracker: Per-stream dict, updated in place between polls.
+        stream_entry: One item of the ``streams`` list.
+        poll_time: Client time when the response was received.
+
+    Returns:
+        list: New samples, oldest first.
+    """
+    caption_ts = _rtsu_number(stream_entry.get("caption_ts"))
+    if caption_ts is None or caption_ts == tracker.get("last_caption_ts"):
+        return []
+
+    history = [entry for entry in (stream_entry.get("caption_history") or []) if isinstance(entry, dict)]
+    if not history:
+        history = [{"response": stream_entry.get("caption"), "playback_seconds": None}]
+    keys = [(entry.get("response"), entry.get("playback_seconds")) for entry in history]
+
+    previous = tracker.get("last_newest")
+    history_gap = False
+    if previous is not None and previous in keys:
+        new_count = max(keys.index(previous), 1)
+    else:
+        new_count = len(history)
+        # The previous newest entry scrolled out of the history: more checks may have been missed.
+        history_gap = previous is not None
+
+    metrics = tuple(_rtsu_number(stream_entry.get(key)) for key in ("ttft_ms", "tpot_ms", "throughput_tps"))
+    last_metrics = tracker.get("last_metrics")
+    possibly_stale = last_metrics is not None and any(m is not None for m in metrics) and metrics == last_metrics
+
+    def make_sample(entry, sample_type, sample_ts, sample_metrics, stale, missed_before):
+        caption = entry.get("response")
+        return {
+            "stream_id": stream_entry.get("stream_id"),
+            "sample": sample_type,
+            "caption": caption if isinstance(caption, str) else None,
+            "decision": parse_rtsu_decision(caption),
+            "playback_seconds": _rtsu_number(entry.get("playback_seconds")),
+            "caption_ts": sample_ts,
+            "ttft_ms": sample_metrics[0],
+            "tpot_ms": sample_metrics[1],
+            "throughput_tps": sample_metrics[2],
+            "possibly_stale": stale,
+            "missed_before": missed_before,
+            "history_gap": False,
+            "poll_time": poll_time,
+        }
+
+    samples = [
+        make_sample(history[index], "missed", None, (None, None, None), False, 0)
+        for index in range(new_count - 1, 0, -1)
+    ]
+    samples.append(make_sample(history[0], "observed", caption_ts, metrics, possibly_stale, new_count - 1))
+    samples[0]["history_gap"] = history_gap
+
+    tracker["last_caption_ts"] = caption_ts
+    tracker["last_newest"] = keys[0]
+    tracker["last_metrics"] = metrics
+    return samples
+
+
+def rtsu_stop_reason(completed_by_stream, stream_ids, target, min_per_stream, now, deadline):
+    """
+    Apply the RTSU stop rule.
+
+    Args:
+        completed_by_stream: Mapping of stream ID to completed deep analyses.
+        stream_ids: Streams created for the run.
+        target: Global number of deep analyses to collect.
+        min_per_stream: Minimum deep analyses per stream (0 disables the check).
+        now: Current time.
+        deadline: Time at which the run times out.
+
+    Returns:
+        str: ``target_met``, ``timeout``, or None to keep collecting.
+    """
+    total = sum(completed_by_stream.get(stream_id, 0) for stream_id in stream_ids)
+    if total >= target and all(completed_by_stream.get(stream_id, 0) >= min_per_stream for stream_id in stream_ids):
+        return "target_met"
+    if now >= deadline:
+        return "timeout"
+    return None
+
+
+def match_rtsu_trigger(stream_samples, trigger_caption, created_ts, uploaded_at, anchor):
+    """
+    Find the alert check that triggered a deep analysis.
+
+    When the trigger frame's ``created_ts`` is known, the caption with the same text whose
+    frame time (``anchor + playback_seconds``) is closest to ``created_ts`` is used, within
+    ``RTSU_TRIGGER_MATCH_TOLERANCE_S``. Without ``created_ts`` (registry record evicted), the
+    latest caption with the same text and ``caption_ts <= uploaded_at`` is used.
+
+    Returns:
+        tuple: (sample or None, ``frame``, ``text``, or ``none``)
+    """
+    if not isinstance(trigger_caption, str) or not trigger_caption:
+        return None, "none"
+    candidates = [sample for sample in stream_samples if sample.get("caption") == trigger_caption]
+
+    if created_ts is not None:
+        timed = [sample for sample in candidates if sample.get("playback_seconds") is not None]
+        if anchor is not None and timed:
+            best = min(timed, key=lambda sample: abs(anchor + sample["playback_seconds"] - created_ts))
+            if abs(anchor + best["playback_seconds"] - created_ts) <= RTSU_TRIGGER_MATCH_TOLERANCE_S:
+                return best, "frame"
+        return None, "none"
+
+    if uploaded_at is not None:
+        earlier = [s for s in candidates if s.get("caption_ts") is not None and s["caption_ts"] <= uploaded_at]
+        if earlier:
+            return max(earlier, key=lambda sample: sample["caption_ts"]), "text"
+    return None, "none"
+
+
+def build_rtsu_deep_analysis_rows(analyses, samples, anchors, clock_offset_s):
+    """
+    Build one row per completed deep analysis, including trigger matching.
+
+    ``E2E Latency = Trigger Latency + Wait + Generation Latency + Publish Lag``, where
+    Trigger Latency is ``caption_ts(trigger) - created_ts``.
+
+    Args:
+        analyses: Collected analyses with ``stream_id``, ``frame_id``, ``first_seen_client``,
+            ``detail`` (alert detail body), ``created_ts``, and ``registry_status``.
+        samples: Alert-check samples from ``extract_rtsu_alert_check_samples``.
+        anchors: Stream ID mapped to the stream start time (server clock).
+        clock_offset_s: Server-minus-client clock offset in seconds.
+
+    Returns:
+        list: Rows keyed by ``RTSU_DEEP_ANALYSIS_COLUMNS``. Timestamps use the server clock.
+    """
+    from common.video import parse_rtsu_timestamp
+
+    samples_by_stream = {}
+    for sample in samples:
+        samples_by_stream.setdefault(sample["stream_id"], []).append(sample)
+
+    rows = []
+    for analysis in sorted(analyses, key=lambda item: item["first_seen_client"]):
+        stream_id = analysis["stream_id"]
+        detail = analysis.get("detail") if isinstance(analysis.get("detail"), dict) else {}
+        metrics = detail.get("metrics") if isinstance(detail.get("metrics"), dict) else {}
+        created_ts = _rtsu_number(analysis.get("created_ts"))
+        uploaded_ts = parse_rtsu_timestamp(detail.get("uploaded_at"))
+        first_seen_ts = analysis["first_seen_client"] + clock_offset_s
+        generation_ms = _rtsu_number(metrics.get("total_duration_ms"))
+
+        trigger, match = match_rtsu_trigger(
+            samples_by_stream.get(stream_id, []), detail.get("trigger_caption"),
+            created_ts, uploaded_ts, anchors.get(stream_id),
+        )
+        trigger_ts = trigger["caption_ts"] if trigger else None
+        wait_ms = None
+        if uploaded_ts is not None and trigger_ts is not None and generation_ms is not None:
+            wait_ms = round((uploaded_ts - trigger_ts) * 1000 - generation_ms, 2)
+
+        segment = metrics.get("segment_path")
+        frames = _rtsu_number(metrics.get("frames_sampled"))
+        tokens = _rtsu_number(metrics.get("total_tokens_generated"))
+        confirmed = detail.get("confirmed")
+        row = {
+            "Stream ID": stream_id,
+            "Frame ID": analysis["frame_id"],
+            "Segment": os.path.basename(segment) if isinstance(segment, str) else None,
+            "Confirmed": confirmed if isinstance(confirmed, bool) else None,
+            "Frames Sampled": int(frames) if frames is not None else None,
+            "TTFT (ms)": _rtsu_round(_rtsu_number(metrics.get("ttft_ms"))),
+            "TPOT (ms)": _rtsu_round(_rtsu_number(metrics.get("tpot_ms"))),
+            "Throughput (tok/s)": _rtsu_round(_rtsu_number(metrics.get("throughput_tps"))),
+            "Output Tokens": int(tokens) if tokens is not None else None,
+            "Generation Latency (ms)": _rtsu_round(generation_ms),
+            "E2E Latency (ms)": _rtsu_ms(created_ts, first_seen_ts),
+            "Trigger Latency (ms)": _rtsu_ms(created_ts, trigger_ts),
+            "Wait (ms)": wait_ms,
+            "Publish Lag (ms)": _rtsu_ms(uploaded_ts, first_seen_ts),
+            "Trigger Match": match,
+            "Registry Status": analysis.get("registry_status"),
+            "Frame Created TS": _rtsu_round(created_ts, 6),
+            "Trigger Caption TS": _rtsu_round(trigger_ts, 6),
+            "Trigger Playback (s)": _rtsu_round(trigger["playback_seconds"], 6) if trigger else None,
+            "Uploaded TS": _rtsu_round(uploaded_ts, 6),
+            "First Seen TS": round(first_seen_ts, 6),
+        }
+        if analysis.get("artifacts"):
+            row["Artifacts"] = json.dumps(analysis["artifacts"])
+        rows.append(row)
+    return rows
+
+
+def refine_rtsu_anchors(initial_anchors, deep_rows):
+    """
+    Refine each stream start time to ``created_ts - playback_seconds`` of its frame-matched triggers.
+
+    Both values come from the server, so the refined anchor does not depend on the clock offset.
+    Streams without a frame-matched trigger keep the initial (POST midpoint) anchor.
+    """
+    estimates = {}
+    for row in deep_rows:
+        if row["Trigger Match"] == "frame":
+            estimates.setdefault(row["Stream ID"], []).append(row["Frame Created TS"] - row["Trigger Playback (s)"])
+    anchors = dict(initial_anchors)
+    for stream_id, values in estimates.items():
+        anchors[stream_id] = float(np.median(values))
+    return anchors
+
+
+def build_rtsu_alert_check_rows(samples, anchors):
+    """
+    Build one row per alert check.
+
+    ``Latency (ms)`` is ``caption_ts - (anchor + playback_seconds)``: the age of the frame when
+    its verdict was published. ``Cycle Interval (ms)`` is the time since the previous observed
+    caption of the same stream; it is left empty when checks were missed in between.
+
+    Args:
+        samples: Alert-check samples in collection order.
+        anchors: Stream ID mapped to the stream start time (server clock).
+
+    Returns:
+        list: Rows keyed by ``RTSU_ALERT_CHECK_COLUMNS``.
+    """
+    rows, last_observed = [], {}
+    for sample in samples:
+        stream_id = sample["stream_id"]
+        anchor = anchors.get(stream_id)
+        playback = sample["playback_seconds"]
+        frame_ts = anchor + playback if anchor is not None and playback is not None else None
+        cycle_ms = None
+        if sample["sample"] == "observed":
+            previous = last_observed.get(stream_id)
+            if not sample["missed_before"] and not sample["history_gap"]:
+                cycle_ms = _rtsu_ms(previous, sample["caption_ts"])
+            last_observed[stream_id] = sample["caption_ts"]
+        rows.append({
+            "Stream ID": stream_id,
+            "Sample": sample["sample"],
+            "Caption TS": _rtsu_round(sample["caption_ts"], 6),
+            "Playback (s)": _rtsu_round(playback, 6),
+            "Decision": {True: "yes", False: "no"}.get(sample["decision"]),
+            "TTFT (ms)": _rtsu_round(sample["ttft_ms"]),
+            "TPOT (ms)": _rtsu_round(sample["tpot_ms"]),
+            "Throughput (tok/s)": _rtsu_round(sample["throughput_tps"]),
+            "Latency (ms)": _rtsu_ms(frame_ts, sample["caption_ts"]),
+            "Cycle Interval (ms)": cycle_ms,
+            "Possibly Stale": sample["possibly_stale"],
+            "Caption": sample["caption"],
+        })
+    return rows
+
+
+def build_rtsu_startup_rows(stream_ids, post_mid_client, publishing_first_seen_client, alert_rows, deep_rows, anchors):
+    """
+    Build per-stream startup KPIs, reported separately from the steady-state summaries.
+
+    Time to publishing uses client times. Time to first caption and first deep analysis are
+    measured from the stream start anchor on the server clock.
+    """
+    rows = []
+    for stream_id in stream_ids:
+        anchor = anchors.get(stream_id)
+        caption_times = [r["Caption TS"] for r in alert_rows if r["Stream ID"] == stream_id and r["Caption TS"] is not None]
+        deep_times = [r["First Seen TS"] for r in deep_rows if r["Stream ID"] == stream_id]
+        rows.append({
+            "Stream ID": stream_id,
+            "Time to Publishing (ms)": _rtsu_ms(post_mid_client.get(stream_id), publishing_first_seen_client.get(stream_id)),
+            "Time to First Caption (ms)": _rtsu_ms(anchor, min(caption_times)) if caption_times else None,
+            "Time to First Deep Analysis (ms)": _rtsu_ms(anchor, min(deep_times)) if deep_times else None,
+        })
+    return rows
+
+
+def summarize_rtsu_kpis(rows, kpi_columns):
+    """Return ``{"overall": {kpi: stats}, "<stream_id>": {kpi: stats}}`` using calculate_summary_stats."""
+    grouped = {}
+    for row in rows:
+        grouped.setdefault(row["Stream ID"], []).append(row)
+    summary = {"overall": {kpi: calculate_summary_stats([row.get(kpi) for row in rows]) for kpi in kpi_columns}}
+    for stream_id, stream_rows in grouped.items():
+        summary[stream_id] = {kpi: calculate_summary_stats([row.get(kpi) for row in stream_rows]) for kpi in kpi_columns}
+    return summary
+
+
+def compute_rtsu_rates(alert_rows, deep_rows, stream_ids, duration_s):
+    """Return system-level rates for the collection window."""
+    minutes = duration_s / 60 if duration_s else None
+
+    def per_minute(count):
+        return round(count / minutes, 2) if minutes else None
+
+    decisions = [row["Decision"] for row in alert_rows if row["Decision"] is not None]
+    confirmed = [row["Confirmed"] for row in deep_rows if row["Confirmed"] is not None]
+    timed = [(row["Output Tokens"], row["Generation Latency (ms)"]) for row in deep_rows
+             if row["Output Tokens"] is not None and row["Generation Latency (ms)"]]
+    generation_s = sum(ms for _, ms in timed) / 1000
+    return {
+        "Alert Checks per Minute": per_minute(len(alert_rows)),
+        "Alert Checks per Minute per Stream": {
+            stream_id: per_minute(sum(1 for row in alert_rows if row["Stream ID"] == stream_id))
+            for stream_id in stream_ids
+        },
+        "Alert Check Yes Ratio": round(decisions.count("yes") / len(decisions), 4) if decisions else None,
+        "Deep Analyses per Minute": per_minute(len(deep_rows)),
+        "Deep Analysis Confirmed Ratio": round(sum(confirmed) / len(confirmed), 4) if confirmed else None,
+        "Aggregate Deep Decode Throughput (tok/s)": (
+            round(sum(tokens for tokens, _ in timed) / generation_s, 2) if generation_s > 0 else None
+        ),
+    }
+
+
+def compute_rtsu_data_quality(samples, deep_rows, counters, reconnects):
+    """Return completion and data-quality counters."""
+    observed = [sample for sample in samples if sample["sample"] == "observed"]
+    matches = [row["Trigger Match"] for row in deep_rows]
+    return {
+        "alert_checks_observed": len(observed),
+        "alert_checks_missed": len(samples) - len(observed),
+        "alert_check_history_gaps": sum(1 for sample in samples if sample["history_gap"]),
+        "alert_checks_possibly_stale": sum(1 for sample in observed if sample["possibly_stale"]),
+        "alert_checks_null_metrics": sum(
+            1 for sample in observed
+            if sample["ttft_ms"] is None and sample["tpot_ms"] is None and sample["throughput_tps"] is None
+        ),
+        "yes_verdicts_observed": sum(1 for sample in samples if sample["decision"] is True),
+        "deep_analyses_completed": len(deep_rows),
+        "triggers_matched_by_frame": matches.count("frame"),
+        "triggers_matched_by_text": matches.count("text"),
+        "unmatched_triggers": matches.count("none"),
+        "registry_not_found": sum(1 for row in deep_rows if row["Registry Status"] == "not_found"),
+        "registry_errors": sum(1 for row in deep_rows if row["Registry Status"] == "error"),
+        **counters,
+        "stream_reconnects": reconnects,
+    }
+
+
+def _rtsu_na(value):
+    return "NA" if value is None else value
+
+
+def _write_rtsu_json(path, data):
+    from common.video import redact_rtsu_data
+
+    with open(path, "w", encoding="utf-8") as file:
+        json.dump(redact_rtsu_data(data), file, indent=4, ensure_ascii=False)
+
+
+def _write_rtsu_csv(path, columns, rows):
+    from common.video import redact_rtsu_data
+
+    with open(path, "w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=columns, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(redact_rtsu_data(rows))
+
+
+def _write_rtsu_summary_csv(path, summary):
+    sections = (
+        ("Alert Check", summary["alert_check"]["kpis"], RTSU_ALERT_CHECK_KPIS),
+        ("Deep Analysis", summary["deep_analysis"]["kpis"], RTSU_DEEP_ANALYSIS_KPIS),
+    )
+    with open(path, "w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        writer.writerow(["Section", "KPI", "Scope", "Min", "Max", "Mean", "p90"])
+        for section, kpis_by_scope, kpis in sections:
+            for kpi in kpis:
+                for scope, stats in kpis_by_scope.items():
+                    writer.writerow([section, kpi, scope, *(_rtsu_na(stats[kpi][key]) for key in RTSU_STAT_KEYS)])
+
+
+def save_rtsu_metrics_to_wsf_format(report_dir, summary_file):
+    """
+    Save Real-Time Scene Understanding metrics to WSF CSV format (key,value).
+
+    Args:
+        report_dir: Directory to save the CSV file.
+        summary_file: Path to ``rtsu_summary_metrics.json``.
+
+    Returns:
+        str: Path to the output file.
+    """
+    output_file = os.path.join(report_dir, "rtsu_metrics_wsf.csv")
+    with open(summary_file, "r", encoding="utf-8") as file:
+        summary = json.load(file)
+
+    run = summary["run"]
+    alert, deep, rates = summary["alert_check"], summary["deep_analysis"], summary["rates"]
+    alert_overall, deep_overall = alert["kpis"]["overall"], deep["kpis"]["overall"]
+    rows = [
+        ("Streams", run["streams"]),
+        ("Stop Reason", run["stop_reason"]),
+        ("Run Duration (s)", run["run_duration_s"]),
+        ("Alert Check Count", alert["count"]),
+        ("Alert Check Avg TTFT (ms)", alert_overall["TTFT (ms)"]["mean"]),
+        ("Alert Check Avg TPOT (ms)", alert_overall["TPOT (ms)"]["mean"]),
+        ("Alert Check Avg Throughput (tok/s)", alert_overall["Throughput (tok/s)"]["mean"]),
+        ("Alert Check Avg Latency (ms)", alert_overall["Latency (ms)"]["mean"]),
+        ("Alert Check p90 Latency (ms)", alert_overall["Latency (ms)"]["p90"]),
+        ("Deep Analysis Count", deep["count"]),
+        ("Deep Analysis Avg TTFT (ms)", deep_overall["TTFT (ms)"]["mean"]),
+        ("Deep Analysis Avg TPOT (ms)", deep_overall["TPOT (ms)"]["mean"]),
+        ("Deep Analysis Avg Throughput (tok/s)", deep_overall["Throughput (tok/s)"]["mean"]),
+        ("Deep Analysis Avg Output Tokens", deep_overall["Output Tokens"]["mean"]),
+        ("Deep Analysis Avg Generation Latency (ms)", deep_overall["Generation Latency (ms)"]["mean"]),
+        ("Deep Analysis Avg E2E Latency (ms)", deep_overall["E2E Latency (ms)"]["mean"]),
+        ("Deep Analysis p90 E2E Latency (ms)", deep_overall["E2E Latency (ms)"]["p90"]),
+        ("Alert Checks per Minute", rates["Alert Checks per Minute"]),
+        ("Deep Analyses per Minute", rates["Deep Analyses per Minute"]),
+    ]
+    with open(output_file, "w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        for key, value in rows:
+            writer.writerow([key, _rtsu_na(value)])
+    print(f"WSF formatted scene understanding metrics written to: {output_file}")
+    return output_file
+
+
+def print_rtsu_console_summary(summary, report_dir):
+    """Print compact alert-check and deep-analysis tables (overall scope)."""
+    run, rates = summary["run"], summary["rates"]
+    print(f"\nReal-Time Scene Understanding: stop reason '{run['stop_reason']}', "
+          f"{run['streams']} stream(s), {_rtsu_na(run['run_duration_s'])} s")
+    tables = (
+        ("Alert check", summary["alert_check"], RTSU_ALERT_CHECK_KPIS),
+        ("Deep analysis", summary["deep_analysis"], RTSU_DEEP_ANALYSIS_KPIS),
+    )
+    for title, section, kpis in tables:
+        print(f"\n{title} (overall, {section['count']} samples)")
+        print(f"{'KPI':<26}" + "".join(f"{label:>12}" for label in ("Min", "Max", "Mean", "p90")))
+        for kpi in kpis:
+            stats = section["kpis"]["overall"][kpi]
+            print(f"{kpi:<26}" + "".join(f"{_rtsu_na(stats[key]):>12}" for key in RTSU_STAT_KEYS))
+    print(f"\nAlert checks per minute: {_rtsu_na(rates['Alert Checks per Minute'])}, "
+          f"deep analyses per minute: {_rtsu_na(rates['Deep Analyses per Minute'])}")
+    print(f"Scene understanding reports saved in: {report_dir}")
+
+
+def save_rtsu_reports(report_dir, run):
+    """
+    Compute Real-Time Scene Understanding KPIs and write every report file.
+
+    Args:
+        report_dir: Application report directory (``<report>/scene_understanding``).
+        run: Collected run data with ``metadata``, ``stream_ids``, ``alert_check_samples``,
+            ``deep_analyses``, ``initial_anchors``, ``post_mid_client``,
+            ``publishing_first_seen_client``, ``clock_offset_s``, ``run_start_client``,
+            ``run_end_client``, ``stop_reason``, ``stream_start_status``,
+            ``target_deep_analyses``, ``counters``, and ``reconnects``.
+
+    Returns:
+        dict: The summary written to ``rtsu_summary_metrics.json``.
+    """
+    os.makedirs(report_dir, exist_ok=True)
+    stream_ids = run["stream_ids"]
+    samples = run["alert_check_samples"]
+    initial_anchors = run["initial_anchors"]
+
+    deep_rows = build_rtsu_deep_analysis_rows(run["deep_analyses"], samples, initial_anchors, run["clock_offset_s"])
+    anchors = refine_rtsu_anchors(initial_anchors, deep_rows)
+    alert_rows = build_rtsu_alert_check_rows(samples, anchors)
+    startup_rows = build_rtsu_startup_rows(
+        stream_ids, run["post_mid_client"], run["publishing_first_seen_client"], alert_rows, deep_rows, anchors,
+    )
+
+    start, end = run["run_start_client"], run["run_end_client"]
+    duration_s = round(end - start, 2) if start is not None and end is not None else None
+
+    # Stale GenAI values repeat an earlier caption's metrics: keep them in the rows, not in the statistics.
+    stats_rows = [
+        dict(row, **{kpi: None for kpi in RTSU_GENAI_KPIS}) if row["Possibly Stale"] else row
+        for row in alert_rows
+    ]
+    observed = sum(1 for row in alert_rows if row["Sample"] == "observed")
+    summary = {
+        "run": {
+            "stop_reason": run["stop_reason"],
+            "stream_start_status": run["stream_start_status"],
+            "streams": len(stream_ids),
+            "stream_ids": stream_ids,
+            "target_deep_analyses": run["target_deep_analyses"],
+            "run_duration_s": duration_s,
+        },
+        "alert_check": {
+            "count": len(alert_rows),
+            "observed": observed,
+            "missed": len(alert_rows) - observed,
+            "kpis": summarize_rtsu_kpis(stats_rows, RTSU_ALERT_CHECK_KPIS),
+        },
+        "deep_analysis": {
+            "count": len(deep_rows),
+            "confirmed": sum(1 for row in deep_rows if row["Confirmed"] is True),
+            "kpis": summarize_rtsu_kpis(deep_rows, RTSU_DEEP_ANALYSIS_KPIS),
+        },
+        "startup": startup_rows,
+        "rates": compute_rtsu_rates(alert_rows, deep_rows, stream_ids, duration_s),
+        "data_quality": compute_rtsu_data_quality(samples, deep_rows, run["counters"], run["reconnects"]),
+    }
+
+    metadata = dict(run["metadata"])
+    metadata["run_duration_s"] = duration_s
+    metadata["stream_start_anchors"] = {
+        stream_id: {"initial": _rtsu_round(initial_anchors.get(stream_id), 6), "refined": _rtsu_round(anchors.get(stream_id), 6)}
+        for stream_id in stream_ids
+    }
+
+    summary_file = os.path.join(report_dir, "rtsu_summary_metrics.json")
+    _write_rtsu_json(os.path.join(report_dir, "rtsu_run_metadata.json"), metadata)
+    deep_columns = RTSU_DEEP_ANALYSIS_COLUMNS + (["Artifacts"] if any("Artifacts" in row for row in deep_rows) else [])
+    _write_rtsu_csv(os.path.join(report_dir, "rtsu_alert_check_indv_metrics.csv"), RTSU_ALERT_CHECK_COLUMNS, alert_rows)
+    _write_rtsu_csv(os.path.join(report_dir, "rtsu_deep_analysis_indv_metrics.csv"), deep_columns, deep_rows)
+    _write_rtsu_csv(os.path.join(report_dir, "rtsu_startup_metrics.csv"), RTSU_STARTUP_COLUMNS, startup_rows)
+    _write_rtsu_json(summary_file, summary)
+    _write_rtsu_summary_csv(os.path.join(report_dir, "rtsu_summary_metrics.csv"), summary)
+    save_rtsu_metrics_to_wsf_format(report_dir, summary_file)
+    print_rtsu_console_summary(summary, report_dir)
+    return summary

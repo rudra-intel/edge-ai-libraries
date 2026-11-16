@@ -1,0 +1,34 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+global:
+  report_dir: 'reports'
+  input_profiles_path: 'profiles/profiles.yaml'  # Reference to external input profiles file
+  metrics_collector: 'intel/metrics-manager:2026.1.0'  # Used only with --collect_resource_metrics=yes
+
+apis:
+  scene_understanding:
+    enabled: true
+    service_name: 'scene_understanding'
+    endpoints:
+      health: '9100/api/health'
+      runtime_config: '9100/api/runtime-config.js'
+      streams: '9100/api/streams'
+      alerts: '9100/api/streams/{stream_id}/alerts'
+      alert_detail: '9100/api/streams/{stream_id}/alerts/{frame_id}'
+      thumbnail: '9100/api/streams/{stream_id}/alerts/{frame_id}/thumbnail'
+      video: '9100/api/streams/{stream_id}/alerts/{frame_id}/video'
+      registry_frame: '9100/api/registry/frame/{frame_id}'
+    target_deep_analyses: 5             # Global target across all streams
+    confirmed_only: true                # Count only deep analyses with confirmed=true toward the target
+    min_deep_analyses_per_stream: 1     # Optional per-stream minimum (0 = off)
+    max_timeout_seconds: 1900            # Hard stop; a partial report is still written
+    streams_poll_interval_seconds: 0.5  # Alert-check sampling
+    alerts_poll_interval_seconds: 2.0   # Deep-analysis discovery
+    drain_seconds: 0                    # Extra collection time after the target is met
+    clock_sync_samples: 10              # /api/health calls used for clock-offset estimation
+    warmup_settle_seconds: 30           # Wait after warmup streams are deleted
+    fetch_artifacts: false              # Also GET thumbnail and video (size, hash, HTTP latency)
+    save_raw_responses: true            # Write responses/api_responses.jsonl
+    keep_streams: false                 # true = do not DELETE streams at the end (debugging)
+    input_profile: 'rtsu_realtime'           # Reference to input profile

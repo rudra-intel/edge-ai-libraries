@@ -6,11 +6,17 @@ Video file processing and analysis utilities.
 
 This module provides functions for uploading, processing, and analyzing
 video files including metadata extraction, embedding creation, and summary handling.
+It also contains the Real-Time Scene Understanding (RTSU) API helpers.
 """
 
+import hashlib
+import json
 import os
+import re
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from urllib.parse import quote, urlsplit
 
 import cv2
 import requests
@@ -378,3 +384,312 @@ def stop_all_run_request(run_url, run_ids):
     for run_id in run_ids:
         response = requests.request("DELETE", f"{run_url}/{run_id}")
         print("Stopped live caption:", response.json())
+
+
+# ==============================================================================
+# Real-Time Scene Understanding (RTSU) API helpers
+# ==============================================================================
+
+# Greedy up to the last "@" of the authority, so passwords containing "@" are fully hidden.
+_RTSP_CREDENTIALS_RE = re.compile(r"(?i)(rtsps?://)[^\s/?#]*@")
+_RUNTIME_CONFIG_PREFIX = "window.RUNTIME_CONFIG ="
+_MAX_LOGGED_TEXT_LENGTH = 4096
+
+
+def redact_rtsp_url(text):
+    """Replace RTSP credentials (``user:pass@``) with ``***@`` in a string."""
+    if not isinstance(text, str):
+        return text
+    return _RTSP_CREDENTIALS_RE.sub(r"\1***@", text)
+
+
+def redact_rtsu_data(value):
+    """Return a copy of a JSON-like value with RTSP credentials redacted in every string."""
+    if isinstance(value, str):
+        return redact_rtsp_url(value)
+    if isinstance(value, dict):
+        return {key: redact_rtsu_data(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [redact_rtsu_data(item) for item in value]
+    return value
+
+
+def parse_rtsu_timestamp(value):
+    """
+    Convert an RTSU timestamp to Unix epoch seconds.
+
+    Args:
+        value: ISO 8601 string (for example ``uploaded_at``) or epoch number.
+
+    Returns:
+        float: Epoch seconds, or None if the value cannot be parsed.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.timestamp()
+
+
+def parse_rtsu_runtime_config(text):
+    """Parse the ``window.RUNTIME_CONFIG = {...};`` body of ``/api/runtime-config.js``."""
+    if not isinstance(text, str):
+        return None
+    body = text.strip()
+    if not body.startswith(_RUNTIME_CONFIG_PREFIX):
+        return None
+    body = body[len(_RUNTIME_CONFIG_PREFIX):].strip().rstrip(";").strip()
+    try:
+        config = json.loads(body)
+    except ValueError:
+        return None
+    return config if isinstance(config, dict) else None
+
+
+def compute_rtsu_clock_offset(measurements):
+    """
+    Estimate the server-minus-client clock offset (NTP style).
+
+    Args:
+        measurements: List of ``(t_send, t_recv, server_ts)`` tuples, client times in epoch seconds.
+
+    Returns:
+        dict: ``offset_s``, ``rtt_ms`` and ``samples`` from the shortest round trip, or None.
+    """
+    if not measurements:
+        return None
+    t_send, t_recv, server_ts = min(measurements, key=lambda item: item[1] - item[0])
+    return {
+        "offset_s": round(server_ts - (t_send + t_recv) / 2, 6),
+        "rtt_ms": round((t_recv - t_send) * 1000, 3),
+        "samples": len(measurements),
+    }
+
+
+@dataclass
+class RTSUResponse:
+    """Outcome of one RTSU API call. Times are client epoch seconds; status 0 means no response."""
+
+    status: int
+    body: object
+    t_send: float
+    t_recv: float
+    nbytes: int = 0
+    error: str = ""
+
+    @property
+    def ok(self):
+        return 200 <= self.status < 300
+
+    @property
+    def http_latency_ms(self):
+        return round((self.t_recv - self.t_send) * 1000, 2)
+
+
+class RTSUResponseLog:
+    """Append-only JSON Lines log of RTSU API calls with credentials redacted."""
+
+    def __init__(self, path):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        self.path = path
+        self._file = open(path, "a", encoding="utf-8")
+
+    def write(self, record):
+        if self._file is None:
+            return
+        self._file.write(json.dumps(redact_rtsu_data(record), ensure_ascii=False, default=str) + "\n")
+        self._file.flush()
+
+    def close(self):
+        if self._file is not None:
+            self._file.close()
+            self._file = None
+
+
+def _decode_rtsu_body(content):
+    """Decode a JSON (or runtime-config JavaScript) response body."""
+    try:
+        return json.loads(content)
+    except ValueError:
+        pass
+    text = content.decode("utf-8", errors="replace")
+    runtime_config = parse_rtsu_runtime_config(text)
+    if runtime_config is not None:
+        return runtime_config
+    return text[:_MAX_LOGGED_TEXT_LENGTH]
+
+
+class RTSUApi:
+    """
+    Calls RTSU REST endpoints and records every response.
+
+    Works with a Locust ``HttpSession`` (``locust_session=True``) so calls appear in the
+    Locust statistics, or with a plain ``requests.Session`` for warmup and cleanup.
+    Endpoints use the tool's ``'<port>/<path>'`` format with ``{stream_id}`` and
+    ``{frame_id}`` placeholders.
+    """
+
+    def __init__(self, session, host, endpoints, response_log=None, timeout=10.0, locust_session=False):
+        self.session = session
+        self.host = host.rstrip("/")
+        self.endpoints = endpoints
+        self.response_log = response_log
+        self.timeout = timeout
+        self.locust_session = locust_session
+
+    def url(self, endpoint_key, path_suffix="", **path_params):
+        quoted = {key: quote(str(value), safe="") for key, value in path_params.items()}
+        return f"{self.host}:{self.endpoints[endpoint_key].format(**quoted)}{path_suffix}"
+
+    def label(self, method, endpoint_key, path_suffix=""):
+        """Stable request name for Locust statistics, for example ``GET /api/streams/[id]/alerts``."""
+        path = self.endpoints[endpoint_key].split("/", 1)[-1]
+        path = path.replace("{stream_id}", "[id]").replace("{frame_id}", "[frame_id]")
+        return f"{method} /{path}{'/[id]' if path_suffix else ''}"
+
+    def call(self, method, endpoint_key, *, expected=(200,), params=None, json_body=None,
+             binary=False, path_suffix="", **path_params):
+        """
+        Send one request.
+
+        Args:
+            method: HTTP method.
+            endpoint_key: Key in the ``endpoints`` config section.
+            expected: Status codes counted as success in the Locust statistics.
+            params: Optional query parameters.
+            json_body: Optional JSON request body.
+            binary: Log only the size and SHA-256 hash of the body.
+            path_suffix: Already-quoted suffix appended to the endpoint path.
+            **path_params: Values for the endpoint placeholders.
+
+        Returns:
+            RTSUResponse: Status, decoded body, and client send/receive times.
+        """
+        url = self.url(endpoint_key, path_suffix, **path_params)
+        name = self.label(method, endpoint_key, path_suffix)
+        status, content, error = 0, b"", ""
+        t_send = time.time()
+        try:
+            if self.locust_session:
+                with self.session.request(method, url, name=name, catch_response=True, timeout=self.timeout,
+                                          params=params, json=json_body) as response:
+                    status, content = response.status_code or 0, response.content or b""
+                    if status == 0 and getattr(response, "error", None) is not None:
+                        error = type(response.error).__name__
+                    if status in expected:
+                        response.success()
+                    else:
+                        response.failure(f"Unexpected HTTP status {status}")
+            else:
+                response = self.session.request(method, url, timeout=self.timeout, params=params, json=json_body)
+                status, content = response.status_code, response.content or b""
+        except requests.RequestException as exc:
+            error = type(exc).__name__
+        t_recv = time.time()
+
+        body = None
+        if content:
+            if binary:
+                body = {"sha256": hashlib.sha256(content).hexdigest(), "bytes": len(content)}
+            else:
+                body = _decode_rtsu_body(content)
+        result = RTSUResponse(status=status, body=body, t_send=t_send, t_recv=t_recv,
+                              nbytes=len(content), error=error)
+
+        if self.response_log is not None:
+            self.response_log.write({
+                "t_send": round(t_send, 6),
+                "t_recv": round(t_recv, 6),
+                "method": method,
+                "name": name,
+                "path": urlsplit(url).path,
+                "params": params,
+                "request_body": json_body,
+                "status": status,
+                "http_latency_ms": result.http_latency_ms,
+                "bytes": result.nbytes,
+                "body": body,
+                "error": error,
+            })
+        return result
+
+
+def describe_rtsu_error(response):
+    """Return a short, credential-free description of a failed RTSU call."""
+    if response.status == 0:
+        return f"request failed ({response.error or 'no response'})"
+    detail = response.body.get("detail") if isinstance(response.body, dict) else None
+    if isinstance(detail, str):
+        return f"HTTP {response.status}: {redact_rtsp_url(detail)[:300]}"
+    return f"HTTP {response.status}"
+
+
+def estimate_rtsu_clock_offset(api, samples):
+    """
+    Call ``GET /api/health`` several times and estimate the clock offset.
+
+    Args:
+        api: RTSUApi instance.
+        samples: Number of health calls.
+
+    Returns:
+        tuple: (offset dict or None, last successful RTSUResponse or None)
+    """
+    measurements, last_ok = [], None
+    for _ in range(samples):
+        response = api.call("GET", "health")
+        if not response.ok or not isinstance(response.body, dict):
+            continue
+        last_ok = response
+        server_ts = parse_rtsu_timestamp(response.body.get("timestamp"))
+        if server_ts is not None:
+            measurements.append((response.t_send, response.t_recv, server_ts))
+    return compute_rtsu_clock_offset(measurements), last_ok
+
+
+def start_rtsu_stream(api, stream_id, stream):
+    """
+    Start one stream with ``POST /api/streams``.
+
+    Args:
+        api: RTSUApi instance.
+        stream_id: Full stream ID to create.
+        stream: Validated stream dict with ``url``, ``alert_prompt`` and ``deep_analyzer_prompt``.
+
+    Returns:
+        RTSUResponse: Response of the POST call.
+    """
+    payload = {
+        "url": stream["url"],
+        "stream_id": stream_id,
+        "alert_prompt": stream["alert_prompt"],
+        "deep_analyzer_prompt": stream["deep_analyzer_prompt"],
+    }
+    return api.call("POST", "streams", json_body=payload)
+
+
+def stop_rtsu_streams(api, stream_ids):
+    """
+    Delete streams with ``DELETE /api/streams/{id}``. A 404 counts as already removed.
+
+    Returns:
+        dict: Stream ID mapped to ``removed``, ``not_found`` or an error description.
+    """
+    results = {}
+    for stream_id in stream_ids:
+        response = api.call("DELETE", "streams", expected=(200, 404), path_suffix="/" + quote(stream_id, safe=""))
+        if response.status == 200:
+            results[stream_id] = "removed"
+        elif response.status == 404:
+            results[stream_id] = "not_found"
+        else:
+            results[stream_id] = describe_rtsu_error(response)
+    return results
