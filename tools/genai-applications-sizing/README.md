@@ -60,8 +60,10 @@ The tool supports performance profiling for the following GenAI applications:
 1. Clone the repository and navigate to the project directory:
 
    ```bash
+   # Clone the latest on mainline
    git clone https://github.com/open-edge-platform/edge-ai-libraries.git edge-ai-libraries
-   cd edge-ai-libraries/tools/genai-applications-sizing
+   # Alternatively, Clone a specific release branch
+   git clone https://github.com/open-edge-platform/edge-ai-libraries.git edge-ai-libraries -b <release-tag>
    ```
 
 2. Install the required Python dependencies:
